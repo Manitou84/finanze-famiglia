@@ -13,8 +13,17 @@ const TABLES = {
   recurrings: ["id", "household_id", "name", "kind", "amount", "category_id", "account_id", "frequency", "start_month", "due_day",
     "match_text", "status", "notes", "version", "updated_at", "updated_by", "deleted_at"],
   category_rules: ["id", "household_id", "pattern", "category_id", "kind", "version", "updated_at", "updated_by", "deleted_at"],
+  vehicles: ["id", "household_id", "name", "model", "plate", "insurance_company", "insurance_months", "bollo_due",
+    "insurance_due", "revision_due", "status", "notes", "sort_order", "version", "updated_at", "updated_by", "deleted_at"],
+  people: ["id", "household_id", "name", "role", "color", "birth_year", "notes", "sort_order", "version", "updated_at", "updated_by", "deleted_at"],
+  person_items: ["id", "household_id", "person_id", "kind", "name", "due_date", "repeat_months", "notes", "version", "updated_at", "updated_by", "deleted_at"],
+  allowance: ["id", "household_id", "person_id", "amount", "occurred_on", "note", "version", "updated_at", "updated_by", "deleted_at"],
+  yearly_docs: ["id", "household_id", "kind", "year", "status", "due_date", "done_date", "amount", "office", "notes", "version", "updated_at", "updated_by", "deleted_at"],
+  trips: ["id", "household_id", "name", "destination", "start_date", "end_date", "status", "budget", "color", "notes", "included", "excluded",
+    "version", "updated_at", "updated_by", "deleted_at"],
+  trip_items: ["id", "household_id", "trip_id", "kind", "name", "amount", "booked", "due_date", "notes", "sort_order", "version", "updated_at", "updated_by", "deleted_at"],
   transactions: ["id", "household_id", "account_id", "category_id", "kind", "amount", "occurred_on", "description",
-    "transfer_account_id", "created_by", "recurring_id", "external_id", "version", "updated_at", "updated_by", "deleted_at"],
+    "transfer_account_id", "created_by", "recurring_id", "external_id", "vehicle_id", "person_id", "version", "updated_at", "updated_by", "deleted_at"],
   budgets: ["id", "household_id", "category_id", "month", "amount", "version", "updated_at", "updated_by", "deleted_at"],
   app_settings: ["household_id", "key", "value", "version", "updated_at", "updated_by"],
 };
@@ -247,6 +256,10 @@ async function saveTransaction(d) {
   if (!d.id) row.created_by = uid();
   if ("recurring_id" in d) row.recurring_id = d.recurring_id || null;
   if (!d.id && !row.recurring_id) row.recurring_id = autoLink(row);
+  if ("vehicle_id" in d) row.vehicle_id = d.vehicle_id || null;
+  else if (!d.id) row.vehicle_id = autoVehicle(row);
+  if ("person_id" in d) { row.person_id = d.person_id || null; if (row.description && (d.person_id || d.id)) learnPerson(row.description, row.person_id); }
+  else if (!d.id) row.person_id = autoPerson(row);
   write("transactions", row);
   if (row.category_id && row.description) await learn(row.description, row.category_id, row.kind);
   return row;
@@ -337,4 +350,342 @@ async function registerRecurring(id, month) {
   const acc = r.account_id || (balances().find(a => a.type === "contanti") || balances()[0] || {}).id;
   return saveTransaction({ kind: r.kind, amount: r.amount, occurred_on: dueDate(r, month), account_id: acc,
     category_id: r.category_id, description: r.name, recurring_id: id });
+}
+
+/* ---------- auto (stesse regole del Mac) ---------- */
+const PUBLIC = ["trenitalia", "italo", "trenord", "atm milano", "mycicero", "aps holding", "taxi", "uber", "freenow",
+  "free now", "enjoy", "share now", "autobus", "metro", "flixbus", "itabus"];
+const CAR_WORDS = ["eni ", "enilive", "q8", "tamoil", "esso", "agip", "api-ip", "ip ", "carburant", "benzina", "gasolio",
+  "distributore", "gpl", "metano", "self service", "ricarica auto", "officina", "gommista", "tagliando", "revisione",
+  "carrozzeria", "ricambi", "lavaggio", "pneumatic", "meccanic", "elettrauto", "autostrade", "pedaggio", "parcheggio",
+  "easypark", "parking", "bollo auto"];
+const activeVehicles = () => rows("vehicles").filter(v => v.status === "attiva").sort((a, b) => a.sort_order - b.sort_order);
+function isCarExpense(tx, vehicles) {
+  if (tx.kind !== "spesa") return false;
+  const t = norm(tx.description);
+  if (t.includes("imposta di bollo") || PUBLIC.some(w => t.includes(w)) || t.includes("telepass")) return false;
+  if (vehicles.some(v => v.insurance_company && t.includes(norm(v.insurance_company).trim()))) return true;
+  if (t.includes("bollo auto") || t.includes("tassa automobilistica")) return true;
+  const c = catById(tx.category_id);
+  if (!c) return CAR_WORDS.some(w => t.includes(w));
+  const p = c.parent_id && catById(c.parent_id);
+  return [c.name, p && p.name].some(n => (n || "").toLowerCase() === "auto e trasporti");
+}
+function autoVehicle(tx) {
+  const vs = activeVehicles();
+  if (!vs.length || !isCarExpense(tx, vs)) return null;
+  if (vs.length === 1) return vs[0].id;
+  const t = norm(tx.description);
+  const hits = vs.filter(v => v.insurance_company && t.includes(norm(v.insurance_company).trim()));
+  return hits.length === 1 ? hits[0].id : null;
+}
+function autoDeadlines() {
+  const today = new Date(todayIso() + "T12:00:00");
+  const out = [];
+  for (const v of activeVehicles()) for (const [f, label] of [["bollo_due", "Bollo"], ["insurance_due", "Assicurazione"], ["revision_due", "Revisione"]]) {
+    if (!v[f]) continue;
+    const days = Math.round((new Date(v[f] + "T12:00:00") - today) / 864e5);
+    out.push({ vehicle: v.name, label, due: v[f], days, level: days <= 0 ? "scaduta" : days <= 15 ? "15" : days <= 30 ? "30" : null });
+  }
+  return out.sort((a, b) => a.due.localeCompare(b.due));
+}
+
+
+/* ---------- famiglia: persone, documenti, visite, paghetta, ISEE e 730 (stesse regole del Mac) ---------- */
+const PERSON_RULES = "person_rules";
+const PEOPLE_PALETTE = ["#2E5E4E", "#9A3F5C", "#E3A73A", "#2F5F8A", "#7F77DD", "#D85A30"];
+const DEDUCT = [
+  ["Spese sanitarie", ["farmacia", "parafarmacia", "medico", "dentist", "odontoiatr", "ottica", "ospedale", "ticket",
+    "analisi", "poliambulatorio", "fisioterap", "ambulatorio", "asst", "visita", "occhiali"]],
+  ["Istruzione", ["scuola", "mensa scolastica", "mensa", "asilo", "nido", "iscrizione", "gita scolastica",
+    "libri scolastici", "università", "universita"]],
+  ["Sport dei figli", ["ginnastica", "danza", "piscina", "nuoto", "calcio", "palestra", "pallavolo", "basket",
+    "tennis", "judo", "karate", "rugby", "scherma", "atletica", "asd ", "ssd "]],
+];
+const people = () => rows("people").sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name));
+const personById = id => { const p = DB.t.people[id]; return p && !p.deleted_at ? p : null; };
+const dlLevel = days => days == null ? null : days <= 0 ? "scaduta" : days <= 15 ? "15" : days <= 30 ? "30" : null;
+const daysTo = iso => Math.round((new Date(iso + "T12:00:00") - new Date(todayIso() + "T12:00:00")) / 864e5);
+function addMonthsIso(iso, n) {
+  const [y, m, d] = iso.split("-").map(Number); const i = y * 12 + m - 1 + n, yy = Math.floor(i / 12), mm = i % 12 + 1;
+  return `${yy}-${pad2(mm)}-${pad2(Math.min(d, new Date(yy, mm, 0).getDate()))}`;
+}
+function deductionType(description, categoryId) {
+  const t = norm(description);
+  for (const [label, words] of DEDUCT) if (words.some(w => t.includes(w))) return label;
+  const c = catById(categoryId), p = c && c.parent_id && catById(c.parent_id);
+  return ((p || c || {}).name || "").toLowerCase() === "salute" ? "Spese sanitarie" : null;
+}
+function personRules() {
+  const r = DB.t.app_settings[DB.hh + "|" + PERSON_RULES];
+  try { return r && r.value ? JSON.parse(r.value) : {}; } catch (e) { return {}; }
+}
+function autoPerson(tx) {
+  const rules = personRules(), t = norm(tx.description);
+  const hits = Object.keys(rules).filter(p => t.includes(p)).sort((a, b) => b.length - a.length);
+  return hits.length && personById(rules[hits[0]]) ? rules[hits[0]] : null;
+}
+function learnPerson(description, personId) {
+  const p = learnPattern(String(description || "").split(" · ")[0]); if (!p) return;
+  const rules = personRules();
+  if (personId) { if (rules[p] === personId) return; rules[p] = personId; }
+  else if (p in rules) delete rules[p]; else return;
+  write("app_settings", { key: PERSON_RULES, value: JSON.stringify(rules) });
+}
+function guard() { if (!canEdit()) throw new Error("Il tuo utente può solo consultare i dati"); }
+function savePerson(d) {
+  guard();
+  const name = (d.name || "").trim(); if (!name) throw new Error("Inserisci il nome");
+  const by = d.birth_year ? Number(d.birth_year) : null;
+  if (by != null && !(by >= 1900 && by <= new Date().getFullYear())) throw new Error("Anno di nascita non valido");
+  const row = { id: d.id || uuid4(), name, role: d.role === "figlio" ? "figlio" : "adulto", birth_year: by,
+    notes: (d.notes || "").trim() || null, deleted_at: null };
+  if (d.id) { if (d.color) row.color = d.color; }
+  else { const n = Math.max(0, ...rows("people").map(p => p.sort_order || 0)) + 1; row.sort_order = n; row.color = d.color || PEOPLE_PALETTE[(n - 1) % PEOPLE_PALETTE.length]; }
+  return write("people", row);
+}
+function deletePerson(id) {
+  guard();
+  for (const t of rows("transactions")) if (t.person_id === id) write("transactions", { id: t.id, person_id: null });
+  for (const tbl of ["person_items", "allowance"]) for (const r of rows(tbl)) if (r.person_id === id) write(tbl, { id: r.id, deleted_at: nowIso() });
+  write("people", { id, deleted_at: nowIso() });
+}
+function setTxPerson(txId, personId) {
+  guard(); const t = DB.t.transactions[txId];
+  write("transactions", { id: txId, person_id: personId || null });
+  if (!t || !t.description) return 1;
+  learnPerson(t.description, personId);
+  let n = 1; const pat = learnPattern(String(t.description).split(" · ")[0]);   // anche le altre spese uguali ancora senza persona
+  if (personId && pat) for (const o of rows("transactions"))
+    if (o.id !== txId && o.kind === "spesa" && !o.person_id && learnPattern(String(o.description || "").split(" · ")[0]) === pat) { write("transactions", { id: o.id, person_id: personId }); n++; }
+  return n;
+}
+function savePersonItem(d) {
+  guard();
+  const name = (d.name || "").trim(); if (!name || !d.person_id) throw new Error("Inserisci il nome (es. Carta d'identità, Pediatra)");
+  const rep = Number(d.repeat_months) || null;
+  return write("person_items", { id: d.id || uuid4(), person_id: d.person_id, kind: d.kind === "visita" ? "visita" : "documento",
+    name, due_date: d.due_date || null, repeat_months: rep, notes: (d.notes || "").trim() || null, deleted_at: null });
+}
+function deletePersonItem(id) { guard(); write("person_items", { id, deleted_at: nowIso() }); }
+function renewPersonItem(id, nextDue) {
+  guard(); const it = DB.t.person_items[id]; if (!it) throw new Error("Voce non trovata");
+  const nd = nextDue || (it.repeat_months ? addMonthsIso(todayIso(), it.repeat_months) : null);
+  if (!nd) throw new Error("Indica la nuova scadenza");
+  write("person_items", { id, due_date: nd }); return nd;
+}
+function familyDeadlines() {
+  const out = [];
+  for (const i of rows("person_items")) {
+    const p = personById(i.person_id); if (!p || !i.due_date) continue;
+    const days = daysTo(i.due_date);
+    out.push({ id: i.id, person_id: p.id, person: p.name, label: i.name, kind: i.kind, due: i.due_date, days, level: dlLevel(days) });
+  }
+  for (const d of rows("yearly_docs")) if (d.status !== "fatto" && d.due_date) {
+    const days = daysTo(d.due_date);
+    out.push({ id: d.id, person_id: null, person: "Famiglia", label: (d.kind === "isee" ? "ISEE " : "730 ") + d.year, kind: d.kind, due: d.due_date, days, level: dlLevel(days) });
+  }
+  return out.sort((a, b) => a.due.localeCompare(b.due));
+}
+async function saveYearlyDoc(d) {
+  guard();
+  if (!["isee", "730"].includes(d.kind)) throw new Error("Tipo non valido");
+  const year = Number(d.year); if (!(year >= 2000 && year <= 2100)) throw new Error("Anno non valido");
+  let amount = d.amount === "" || d.amount == null ? null : parseAmount(d.amount);
+  if (d.kind === "730" && amount != null && d.debt) amount = -Math.abs(amount);
+  let due = d.due_date || null;
+  if (!due && !d.id) due = d.kind === "isee" ? `${year}-01-31` : `${year}-09-30`;
+  const status = ["da fare", "in corso", "fatto"].includes(d.status) ? d.status : "da fare";
+  const done = status === "fatto" ? (d.done_date || todayIso()) : (d.done_date || null);
+  const id = d.id || await uuid5([DB.hh, "yd", d.kind, String(year)].join(":"));
+  return write("yearly_docs", { id, kind: d.kind, year, status, due_date: due, done_date: done, amount,
+    office: (d.office || "").trim() || null, notes: (d.notes || "").trim() || null, deleted_at: null });
+}
+function deleteYearlyDoc(id) { guard(); write("yearly_docs", { id, deleted_at: nowIso() }); }
+function deductTotals(year) {
+  const tot = {};
+  for (const t of rows("transactions")) if (t.kind === "spesa" && t.occurred_on.startsWith(year + "-")) {
+    const k = deductionType(t.description, t.category_id); if (k) tot[k] = Math.round(((tot[k] || 0) + Number(t.amount)) * 100) / 100;
+  }
+  return tot;
+}
+function yearlyDocs() {
+  return rows("yearly_docs").sort((a, b) => (b.year - a.year) || a.kind.localeCompare(b.kind)).map(d => {
+    const x = Object.assign({}, d, { amount: d.amount == null ? null : Number(d.amount) });
+    if (d.kind === "730") { x.expenses_year = d.year - 1; x.expenses = deductTotals(d.year - 1); }
+    x.days = d.due_date ? daysTo(d.due_date) : null; x.level = d.status !== "fatto" ? dlLevel(x.days) : null;
+    return x;
+  });
+}
+function addAllowance(personId, amount, note, spent) {
+  guard(); const v = parseAmount(amount); if (!v) throw new Error("Inserisci l'importo");
+  write("allowance", { id: uuid4(), person_id: personId, amount: spent ? -Math.abs(v) : Math.abs(v), occurred_on: todayIso(),
+    note: (note || "").trim() || null, deleted_at: null });
+}
+function deleteAllowance(id) { guard(); write("allowance", { id, deleted_at: nowIso() }); }
+function peopleView(year) {
+  const y = String(year);
+  const txs = rows("transactions").filter(t => t.kind === "spesa" && t.occurred_on.startsWith(y + "-"))
+    .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on))
+    .map(t => Object.assign({}, t, { amount: Number(t.amount), deduct: deductionType(t.description, t.category_id) }));
+  const dl = Object.fromEntries(familyDeadlines().map(d => [d.id, d]));
+  const allow = rows("allowance").sort((a, b) => b.occurred_on.localeCompare(a.occurred_on) || String(b.updated_at).localeCompare(String(a.updated_at)));
+  const r2 = v => Math.round(v * 100) / 100;
+  const ppl = people().map(p => {
+    const mine = txs.filter(t => t.person_id === p.id), byCat = {}, ded = {};
+    for (const t of mine) {
+      const c = catById(t.category_id), k = c ? c.name : "Senza categoria"; byCat[k] = r2((byCat[k] || 0) + t.amount);
+      if (t.deduct) ded[t.deduct] = r2((ded[t.deduct] || 0) + t.amount);
+    }
+    const x = Object.assign({}, p, {
+      items: rows("person_items").filter(i => i.person_id === p.id)
+        .sort((a, b) => (a.due_date ? 0 : 1) - (b.due_date ? 0 : 1) || String(a.due_date).localeCompare(String(b.due_date)))
+        .map(i => Object.assign({}, i, dl[i.id] ? { days: dl[i.id].days, level: dl[i.id].level } : {})),
+      year_total: r2(mine.reduce((s, t) => s + t.amount, 0)), by_category: Object.entries(byCat).sort((a, b) => b[1] - a[1]),
+      transactions: mine.slice(0, 80), deductions: ded });
+    if (p.role === "figlio") {
+      const a = allow.filter(e => e.person_id === p.id).map(e => Object.assign({}, e, { amount: Number(e.amount) }));
+      const iny = a.filter(e => e.occurred_on.startsWith(y + "-"));
+      x.allowance = { balance: r2(a.reduce((s, e) => s + e.amount, 0)), received: r2(iny.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0)),
+        spent: r2(-iny.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0)), entries: a.slice(0, 60) };
+    }
+    return x;
+  });
+  const totals = {};
+  for (const t of txs) if (t.deduct) totals[t.deduct] = r2((totals[t.deduct] || 0) + t.amount);
+  return { year: Number(year), people: ppl, deadlines: familyDeadlines(), deduct_totals: totals, yearly_docs: yearlyDocs(),
+    deduct_unassigned: txs.filter(t => t.deduct && !t.person_id).slice(0, 100), deduct_types: DEDUCT.map(d => d[0]) };
+}
+function export730Csv(year) {
+  const names = Object.fromEntries(people().map(p => [p.id, p.name]));
+  const acc = id => (DB.t.accounts[id] || {}).name || "";
+  const lines = [["Data", "Persona", "Tipo", "Descrizione", "Importo", "Pagato con"]];
+  for (const t of rows("transactions").filter(t => t.kind === "spesa" && t.occurred_on.startsWith(year + "-")).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on))) {
+    const k = deductionType(t.description, t.category_id); if (!k) continue;
+    const d = t.occurred_on;
+    lines.push([`${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`, names[t.person_id] || "da indicare", k, t.description || "",
+      Number(t.amount).toFixed(2).replace(".", ","), acc(t.account_id)]);
+  }
+  return { count: lines.length - 1, text: "﻿" + lines.map(r => r.map(v => /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v).join(";")).join("\r\n") };
+}
+
+
+/* ---------- vacanze (stesse regole del Mac) ---------- */
+const TRIP_KINDS = { trasporto: "Viaggio", alloggio: "Alloggio", attivita: "Attività", altro: "Altro" };
+const TRIP_COLORS = ["#378ADD", "#1D9E75", "#D85A30", "#7F77DD", "#BA7517", "#D4537E"];
+const HOME_CATEGORIES = ["bollette", "casa e mutuo/affitto", "assicurazioni", "banca e tasse", "abbonamenti"];
+const PREPAID = ["volo", "voli", "ryanair", "easyjet", "wizz", "ita airways", "alitalia", "vueling", "lufthansa", "airfrance",
+  "booking", "airbnb", "expedia", "edreams", "volagratis", "lastminute", "hotel", "albergo", "b&b", "agriturismo",
+  "residence", "campeggio", "camping", "villaggio", "trenitalia", "italo", "traghett", "moby", "tirrenia",
+  "grimaldi", "gnv", "corsica ferries", "noleggio", "rent a car", "hertz", "europcar", "avis", "sixt",
+  "agenzia viaggi", "caparra", "skipass", "parcheggio aeroporto"];
+const jsonIds = v => { try { return new Set(JSON.parse(v || "[]")); } catch (e) { return new Set(); } };
+const trips = () => rows("trips");
+function homeCats() {
+  const all = Object.values(DB.t.categories);
+  const tops = new Set(all.filter(c => HOME_CATEGORIES.includes(c.name.toLowerCase())).map(c => c.id));
+  all.forEach(c => { if (tops.has(c.parent_id)) tops.add(c.id); });
+  return tops;
+}
+function tripMap() {
+  const out = {}, live = trips().filter(t => t.status !== "annullata");
+  for (const t of live) for (const i of jsonIds(t.included)) if (!(i in out)) out[i] = t.id;
+  const conf = live.filter(t => t.status === "confermata" && t.start_date && t.end_date).sort((a, b) => a.start_date.localeCompare(b.start_date));
+  if (conf.length) {
+    const home = homeCats(), exc = Object.fromEntries(conf.map(t => [t.id, jsonIds(t.excluded)]));
+    for (const x of rows("transactions")) {
+      if (x.kind !== "spesa" || x.recurring_id || x.id in out || home.has(x.category_id)) continue;
+      const t = conf.find(t => t.start_date <= x.occurred_on && x.occurred_on <= t.end_date && !exc[t.id].has(x.id));
+      if (t) out[x.id] = t.id;
+    }
+  }
+  return out;
+}
+function autoTripOf(tx) {
+  if (!tx || tx.kind !== "spesa" || tx.recurring_id || homeCats().has(tx.category_id)) return null;
+  return trips().filter(t => t.status === "confermata" && t.start_date && t.end_date && t.start_date <= tx.occurred_on && tx.occurred_on <= t.end_date)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date))[0] || null;
+}
+function setTxTrip(txId, tripId) {
+  guard(); const auto = autoTripOf(DB.t.transactions[txId]);
+  for (const t of trips()) {
+    const inc = jsonIds(t.included), exc = jsonIds(t.excluded), i0 = [...inc].sort().join(), e0 = [...exc].sort().join();
+    inc.delete(txId);
+    if (t.id === tripId) { exc.delete(txId); if (!(auto && auto.id === t.id)) inc.add(txId); }
+    else if (auto && auto.id === t.id) exc.add(txId);
+    if ([...inc].sort().join() !== i0 || [...exc].sort().join() !== e0)
+      write("trips", { id: t.id, included: JSON.stringify([...inc].sort()), excluded: JSON.stringify([...exc].sort()) });
+  }
+}
+function saveTrip(d) {
+  guard();
+  const name = (d.name || "").trim(); if (!name) throw new Error("Dai un nome alla vacanza (es. Sardegna 2027)");
+  const start = d.start_date || null, end = d.end_date || null;
+  if (start && end && end < start) throw new Error("La fine viene prima dell'inizio");
+  const status = ["bozza", "confermata", "annullata"].includes(d.status) ? d.status : "bozza";
+  if (status === "confermata" && !(start && end)) throw new Error("Per confermare la vacanza servono le date di inizio e fine");
+  const budget = d.budget === "" || d.budget == null ? null : parseAmount(d.budget);
+  const row = { id: d.id || uuid4(), name, destination: (d.destination || "").trim() || null, start_date: start, end_date: end, status, budget,
+    notes: (d.notes || "").trim() || null, deleted_at: null };
+  if (!d.id) { row.color = d.color || TRIP_COLORS[Object.keys(DB.t.trips).length % TRIP_COLORS.length]; row.included = "[]"; row.excluded = "[]"; }
+  else if (d.color) row.color = d.color;
+  write("trips", row);
+  const m = tripMap(); return { id: row.id, count: Object.values(m).filter(v => v === row.id).length };
+}
+function deleteTrip(id) {
+  guard();
+  for (const i of rows("trip_items")) if (i.trip_id === id) write("trip_items", { id: i.id, deleted_at: nowIso() });
+  write("trips", { id, deleted_at: nowIso() });
+}
+function saveTripItem(d) {
+  guard();
+  const name = (d.name || "").trim(); if (!name || !d.trip_id) throw new Error("Scrivi la voce (es. Volo, Hotel, Noleggio auto)");
+  const amount = d.amount === "" || d.amount == null ? null : parseAmount(d.amount);
+  const row = { id: d.id || uuid4(), trip_id: d.trip_id, kind: d.kind in TRIP_KINDS ? d.kind : "altro", name, amount, booked: d.booked ? 1 : 0,
+    due_date: d.due_date || null, notes: (d.notes || "").trim() || null, deleted_at: null };
+  if (!d.id) row.sort_order = Math.max(0, ...rows("trip_items").filter(i => i.trip_id === d.trip_id).map(i => i.sort_order || 0)) + 1;
+  return write("trip_items", row);
+}
+function toggleTripItem(id) { guard(); const i = DB.t.trip_items[id]; write("trip_items", { id, booked: i.booked ? 0 : 1 }); }
+function deleteTripItem(id) { guard(); write("trip_items", { id, deleted_at: nowIso() }); }
+function tripDeadlines() {
+  const live = Object.fromEntries(trips().filter(t => t.status !== "annullata").map(t => [t.id, t]));
+  return rows("trip_items").filter(i => !i.booked && i.due_date && live[i.trip_id]).map(i => {
+    const days = daysTo(i.due_date);
+    return { id: i.id, trip_id: i.trip_id, trip: live[i.trip_id].name, label: i.name, due: i.due_date, days, level: dlLevel(days) };
+  }).sort((a, b) => a.due.localeCompare(b.due));
+}
+function tripsView() {
+  const today = todayIso(), m = tripMap(), r2 = v => Math.round(v * 100) / 100;
+  const allTx = rows("transactions");
+  const out = trips().map(t => {
+    const mine = allTx.filter(x => m[x.id] === t.id).map(x => Object.assign({}, x, { amount: Number(x.amount) })).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on));
+    const spent = r2(mine.reduce((s, x) => s + x.amount, 0)), byCat = {};
+    for (const x of mine) {
+      let c = catById(x.category_id); if (c && c.parent_id && catById(c.parent_id)) c = catById(c.parent_id);
+      const k = c ? c.name : "Senza categoria"; byCat[k] = byCat[k] || { name: k, color: c ? c.color : "#94A099", amount: 0 }; byCat[k].amount = r2(byCat[k].amount + x.amount);
+    }
+    const items = rows("trip_items").filter(i => i.trip_id === t.id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(i => Object.assign({}, i, { amount: i.amount == null ? null : Number(i.amount) }));
+    const s = t.start_date, e = t.end_date;
+    const state = t.status === "annullata" ? "annullata" : t.status === "bozza" ? "bozza" : e && e < today ? "conclusa" : s && s <= today ? "in corso" : "in programma";
+    const days = s && e ? daysTo(e) - daysTo(s) + 1 : null;
+    const during = mine.filter(x => !s || x.occurred_on >= s);
+    let cands = [];
+    if (s && state !== "annullata") {
+      const lo = addMonthsIso(s, -9);
+      cands = allTx.filter(x => x.kind === "spesa" && !x.recurring_id && !(x.id in m) && x.occurred_on >= lo && x.occurred_on < s && (
+        ((catById(x.category_id) || {}).name || "").toLowerCase() === "viaggi" || PREPAID.some(w => norm(x.description).includes(w))))
+        .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on)).slice(0, 12);
+    }
+    return Object.assign({}, t, { budget: t.budget == null ? null : Number(t.budget), state, days, nights: days ? days - 1 : null, spent,
+      spent_before: r2(mine.filter(x => s && x.occurred_on < s).reduce((a, x) => a + x.amount, 0)),
+      per_day: days && during.length ? r2(during.reduce((a, x) => a + x.amount, 0) / days) : null,
+      planned: r2(items.reduce((a, i) => a + (i.amount || 0), 0)), booked_total: r2(items.filter(i => i.booked).reduce((a, i) => a + (i.amount || 0), 0)),
+      by_category: Object.values(byCat).sort((a, b) => b.amount - a.amount), transactions: mine, items, candidates: cands,
+      excluded_count: jsonIds(t.excluded).size, countdown: s && state === "in programma" ? daysTo(s) : null });
+  });
+  const order = { "in corso": 0, "in programma": 1, "bozza": 2 };
+  const ahead = out.filter(t => t.state in order).sort((a, b) => (order[a.state] - order[b.state]) || String(a.start_date || "9999").localeCompare(String(b.start_date || "9999")));
+  const past = out.filter(t => !(t.state in order)).sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")));
+  return ahead.concat(past);
 }
