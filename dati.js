@@ -22,6 +22,10 @@ const TABLES = {
   trips: ["id", "household_id", "name", "destination", "start_date", "end_date", "status", "budget", "color", "notes", "included", "excluded",
     "version", "updated_at", "updated_by", "deleted_at"],
   trip_items: ["id", "household_id", "trip_id", "kind", "name", "amount", "booked", "due_date", "notes", "sort_order", "version", "updated_at", "updated_by", "deleted_at"],
+  shop_products: ["id", "household_id", "name", "department", "store", "interval_days", "lead_days", "auto", "snooze_until", "notes", "sort_order",
+    "version", "updated_at", "updated_by", "deleted_at"],
+  shop_purchases: ["id", "household_id", "product_id", "bought_on", "version", "updated_at", "updated_by", "deleted_at"],
+  shop_list: ["id", "household_id", "product_id", "name", "qty", "source", "added_on", "checked_at", "purchase_id", "version", "updated_at", "updated_by", "deleted_at"],
   transactions: ["id", "household_id", "account_id", "category_id", "kind", "amount", "occurred_on", "description",
     "transfer_account_id", "created_by", "recurring_id", "external_id", "vehicle_id", "person_id", "version", "updated_at", "updated_by", "deleted_at"],
   budgets: ["id", "household_id", "category_id", "month", "amount", "version", "updated_at", "updated_by", "deleted_at"],
@@ -688,4 +692,99 @@ function tripsView() {
   const ahead = out.filter(t => t.state in order).sort((a, b) => (order[a.state] - order[b.state]) || String(a.start_date || "9999").localeCompare(String(b.start_date || "9999")));
   const past = out.filter(t => !(t.state in order)).sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")));
   return ahead.concat(past);
+}
+
+/* ---------- lista della spesa (stesse regole del Mac: api_spesa.py) ---------- */
+const SHOP_DEFAULTS = { min_purchases: 3, history: 8, lead_frequent: 1, lead_rare: 3, rare_after: 14, snooze_pct: 50, pause_on_trip: 1 };
+const SHOP_DEPARTMENTS = ["Frutta e verdura", "Pane e forno", "Latte e formaggi", "Carne e pesce", "Salumi", "Dispensa", "Colazione",
+  "Surgelati", "Bevande", "Casa e pulizia", "Igiene persona", "Bambini", "Animali", "Altro"];
+const shopKey = s => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+function shopParams() {
+  const r = DB.t.app_settings[DB.hh + "|shop_params"], p = Object.assign({}, SHOP_DEFAULTS);
+  try { const j = JSON.parse(r && r.value || "{}"); for (const k in SHOP_DEFAULTS) if (k in j) p[k] = parseInt(j[k], 10); } catch (e) { }
+  return p;
+}
+const products = () => rows("shop_products").sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name));
+const shopItems = () => rows("shop_list");
+function cadenceOf(dates, p) {
+  const days = [...new Set(dates)].sort();
+  if (days.length < Math.max(2, p.min_purchases)) return null;
+  const last = days.slice(-(p.history + 1));
+  const gaps = last.slice(1).map((d, i) => daysTo(d) - daysTo(last[i])).filter(g => g > 0).sort((a, b) => a - b);
+  if (!gaps.length) return null;
+  const m = gaps.length % 2 ? gaps[(gaps.length - 1) / 2] : (gaps[gaps.length / 2 - 1] + gaps[gaps.length / 2]) / 2;
+  return Math.max(1, Math.floor(m + 0.5));   // stesso arrotondamento del Mac: i suggerimenti hanno lo stesso id
+}
+function productStats() {
+  const p = shopParams(), buys = {};
+  for (const b of rows("shop_purchases")) (buys[b.product_id] = buys[b.product_id] || []).push(b.bought_on);
+  const out = {};
+  for (const x of products()) {
+    const dates = [...new Set(buys[x.id] || [])].sort(), learned = cadenceOf(dates, p);
+    const interval = x.interval_days || learned, last = dates[dates.length - 1] || null;
+    let lead = x.lead_days != null ? x.lead_days : interval && interval >= p.rare_after ? p.lead_rare : p.lead_frequent;
+    lead = Math.min(lead, Math.max(0, (interval || 1) - 1));
+    out[x.id] = { purchases: dates.length, last, learned, interval, source: x.interval_days ? "manuale" : learned ? "calcolata" : null, lead,
+      next_due: last && interval ? addDaysIso(last, interval) : null, missing: interval ? 0 : Math.max(0, p.min_purchases - dates.length) };
+  }
+  return out;
+}
+function addDaysIso(iso, n) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return isoDate(d); }
+function shopPaused() {
+  const t = todayIso();
+  return trips().find(x => x.status === "confermata" && x.start_date <= t && x.end_date >= t) || null;
+}
+async function shopSuggest() {
+  if (!canEdit() || !DB.hh) return 0;
+  const p = shopParams(); if (p.pause_on_trip && shopPaused()) return 0;
+  const onList = new Set(shopItems().filter(i => !i.checked_at && i.product_id).map(i => i.product_id));
+  const st = productStats(), today = todayIso(); let n = 0;
+  for (const x of products()) {
+    const s = st[x.id];
+    if (+x.auto === 0 || onList.has(x.id) || !s.next_due) continue;
+    if (x.snooze_until && today < x.snooze_until) continue;
+    if (today < addDaysIso(s.next_due, -s.lead)) continue;
+    const id = await uuid5([DB.hh, "sugg", x.id, s.next_due].join(":"));
+    if (DB.t.shop_list[id]) continue;
+    write("shop_list", { id, product_id: x.id, name: x.name, qty: null, source: "suggerito", added_on: today, checked_at: null, purchase_id: null, deleted_at: null });
+    n++;
+  }
+  return n;
+}
+function addToList(name, qty) {
+  guard();
+  const label = String(name || "").trim().replace(/\s+/g, " "); if (!label) throw new Error("Scrivi cosa comprare");
+  const prod = products().find(x => shopKey(x.name) === shopKey(label));
+  const exists = shopItems().find(i => !i.checked_at && (prod ? i.product_id === prod.id : !i.product_id && shopKey(i.name) === shopKey(label)));
+  if (exists) return { exists: true, name: exists.name };
+  write("shop_list", { id: uuid4(), product_id: prod ? prod.id : null, name: prod ? prod.name : label, qty: (qty || "").trim() || null,
+    source: "manuale", added_on: todayIso(), checked_at: null, purchase_id: null, deleted_at: null });
+  return { name: prod ? prod.name : label };
+}
+function checkItem(id, checked) {
+  guard(); const it = DB.t.shop_list[id]; if (!it) return;
+  if (checked && !it.checked_at) {
+    let pid = null;
+    if (it.product_id) { pid = uuid4(); write("shop_purchases", { id: pid, product_id: it.product_id, bought_on: todayIso(), deleted_at: null });
+      write("shop_products", { id: it.product_id, snooze_until: null }); }
+    write("shop_list", { id, checked_at: nowIso(), purchase_id: pid });
+  } else if (!checked && it.checked_at) {
+    if (it.purchase_id) write("shop_purchases", { id: it.purchase_id, deleted_at: nowIso() });
+    write("shop_list", { id, checked_at: null, purchase_id: null });
+  }
+}
+function removeItem(id, snooze) {
+  guard(); const it = DB.t.shop_list[id]; if (!it) return null;
+  let until = null;
+  if (snooze && it.product_id) {
+    const s = productStats()[it.product_id], step = Math.max(1, Math.floor(((s && s.interval) || 7) * shopParams().snooze_pct / 100 + 0.5));
+    until = addDaysIso(todayIso(), step); write("shop_products", { id: it.product_id, snooze_until: until });
+  }
+  write("shop_list", { id, deleted_at: nowIso() });
+  return until;
+}
+function finishShopping() {
+  guard(); const done = shopItems().filter(i => i.checked_at);
+  for (const i of done) write("shop_list", { id: i.id, deleted_at: nowIso() });
+  return done.length;
 }

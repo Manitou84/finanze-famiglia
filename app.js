@@ -24,6 +24,7 @@ const ICON = {
   more: '<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>',
   fam: '<circle cx="8" cy="8" r="2.6"/><circle cx="16" cy="8" r="2.6"/><path d="M3.5 19c0-3 2-5 4.5-5s4.5 2 4.5 5M11.5 19c0-3 2-5 4.5-5s4.5 2 4.5 5"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
+  cart: '<path d="M3 5h2.5l2 10h10.5l2-7H7"/><circle cx="9.5" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
   cam: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
 };
 const S = { view: "home", month: thisMonth(), search: "" };
@@ -91,7 +92,7 @@ function renderShell() {
       <button data-v="home"><svg viewBox="0 0 24 24">${ICON.home}</svg>Riepilogo</button>
       <button data-v="movimenti"><svg viewBox="0 0 24 24">${ICON.list}</svg>Movimenti</button>
       <button class="add" id="addbtn" aria-label="Aggiungi una spesa"><span>+</span></button>
-      <button data-v="scadenze"><svg viewBox="0 0 24 24">${ICON.cal}</svg>Scadenze</button>
+      <button data-v="spesa"><svg viewBox="0 0 24 24">${ICON.cart}</svg>Spesa</button>
       <button data-v="famiglia"><svg viewBox="0 0 24 24">${ICON.fam}</svg>Famiglia</button>
     </nav>`;
   $$(".tabbar [data-v]").forEach(b => b.onclick = () => { S.view = b.dataset.v; render(); window.scrollTo(0, 0); });
@@ -114,13 +115,13 @@ function statusLine() {
 
 function render() {
   if (!$("#view")) return;
-  $$(".tabbar [data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === S.view));
+  $$(".tabbar [data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === (S.view === "scadenze" ? "home" : S.view)));
   const withMonth = ["home", "movimenti", "scadenze"].includes(S.view);
   $("#mnav").style.display = withMonth ? "" : "none";
   $("#gear").classList.toggle("on", S.view === "altro");
-  $("#ttl").textContent = withMonth ? monthName(S.month).replace(/^./, c => c.toUpperCase()) : S.view === "famiglia" ? "Famiglia" : "Impostazioni";
+  $("#ttl").textContent = withMonth ? monthName(S.month).replace(/^./, c => c.toUpperCase()) : S.view === "famiglia" ? "Famiglia" : S.view === "spesa" ? "Lista della spesa" : "Impostazioni";
   $("#sub").innerHTML = `${esc(DB.hhName || "")} · ${statusLine()}`;
-  ({ home: viewHome, movimenti: viewMovimenti, scadenze: viewScadenze, famiglia: viewFamiglia, altro: viewAltro })[S.view]();
+  ({ home: viewHome, movimenti: viewMovimenti, scadenze: viewScadenze, spesa: viewSpesa, famiglia: viewFamiglia, altro: viewAltro })[S.view]();
 }
 listeners.add(() => { if ($("#sub")) $("#sub").innerHTML = `${esc(DB.hhName || "")} · ${statusLine()}`; });
 
@@ -198,6 +199,7 @@ function viewHome() {
       ${up.length ? up.map(r => `<div class="row"><span class="muted num" style="width:50px">${shortDate(r.next_due)}</span><span class="n">${esc(r.name)}</span>
         ${r.next_due < todayIso() ? `<span class="badge late">${r.auto ? "Scaduta" : "Non trovata"}</span>` : ""}${r.auto ? `<span class="badge wait">${r.tag}</span>` : `<b class="num">${eur(r.amount)}</b>`}</div>`).join("")
         : `<p class="muted">Nessuna scadenza nei prossimi 30 giorni.</p>`}
+      <button class="btn link" id="all-dl">Tutte le scadenze ›</button>
     </div>
 
     <div class="card"><h2>Conti</h2>${acc.map(a => `<div class="row"><span class="n">${esc(a.name)}</span><b class="num ${a.balance < 0 ? "out" : ""}">${eur(a.balance)}</b></div>`).join("")}
@@ -206,6 +208,7 @@ function viewHome() {
     <div class="card"><h2>Ultimi movimenti</h2>${d.tx.length ? `<div class="list">${d.tx.slice(0, 5).map(txRow).join("")}</div>
       <button class="btn link" id="all-tx">Tutti i movimenti</button>` : `<p class="muted">Nessun movimento.</p>`}</div>`;
   $$("[data-gofam]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "scadenze"; render(); window.scrollTo(0, 0); });
+  $("#all-dl").onclick = () => { S.view = "scadenze"; render(); window.scrollTo(0, 0); };
   $$("[data-gotrip]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "vacanze"; render(); openTripDetail(el.dataset.gotrip); });
   if ($("#all-tx")) $("#all-tx").onclick = () => { S.view = "movimenti"; render(); window.scrollTo(0, 0); };
   bindTxRows(d.tx);
@@ -364,6 +367,52 @@ function openTx(t, preset) {
 }
 
 /* ==========================================================================
+   Spesa
+   ========================================================================== */
+let shopSuggesting = false;
+function viewSpesa() {
+  if (!shopSuggesting) { shopSuggesting = true; shopSuggest().then(n => { shopSuggesting = false; if (n && S.view === "spesa" && !$("#sheet")) viewSpesa(); }); }
+  const items = shopItems(), todo = items.filter(i => !i.checked_at).sort((a, b) => a.added_on.localeCompare(b.added_on) || String(a.updated_at).localeCompare(String(b.updated_at)));
+  const cart = items.filter(i => i.checked_at).sort((a, b) => String(b.checked_at).localeCompare(String(a.checked_at)));
+  const prodById = Object.fromEntries(products().map(p => [p.id, p]));
+  const dep = i => (prodById[i.product_id] || {}).department || "Altro";
+  const byDep = {}; todo.forEach(i => (byDep[dep(i)] = byDep[dep(i)] || []).push(i));
+  const deps = SHOP_DEPARTMENTS.filter(d => byDep[d]).concat(Object.keys(byDep).filter(d => !SHOP_DEPARTMENTS.includes(d)));
+  const st = productStats(), onList = new Set(todo.map(i => i.product_id));
+  const soon = products().filter(p => +p.auto && !onList.has(p.id) && st[p.id].next_due && daysTo(st[p.id].next_due) <= 7)
+    .map(p => ({ p, left: daysTo(st[p.id].next_due) })).sort((a, b) => a.left - b.left);
+  const paused = shopParams().pause_on_trip && shopPaused();
+  $("#view").innerHTML = `
+    ${paused ? `<div class="card alert wait">Siete in vacanza (${esc(paused.name)}): i suggerimenti automatici sono in pausa.</div>` : ""}
+    ${canEdit() ? `<form class="shop-add" id="sa"><input type="text" id="sa-n" list="sa-l" placeholder="Aggiungi…" autocomplete="off" enterkeyhint="done">
+      <button class="btn primary" aria-label="Aggiungi">+</button><datalist id="sa-l">${products().map(p => `<option value="${esc(p.name)}">`).join("")}</datalist></form>` : ""}
+    ${todo.length ? deps.map(d => `<div class="shop-dep">${esc(d)}</div><div class="card shop-card">${byDep[d].map(i => `<div class="shop-it" data-chk="${i.id}">
+        <span class="box"></span><span class="n">${esc(i.name)}${i.qty ? ` <span class="muted">· ${esc(i.qty)}</span>` : ""}${i.source === "suggerito" ? ` <span class="badge wait">suggerito</span>` : ""}</span>
+        ${canEdit() ? (i.source === "suggerito" ? `<button class="btn link" data-snz="${i.id}">Ne ho ancora</button>` : `<button class="btn link muted" data-rm="${i.id}" aria-label="Togli">✕</button>`) : ""}</div>`).join("")}</div>`).join("")
+      : `<div class="empty">${cart.length ? "Tutto nel carrello!" : "La lista è vuota."}${products().length ? "" : "<br>I prodotti del catalogo si creano dal Mac."}</div>`}
+    ${cart.length ? `<div class="shop-dep">Nel carrello (${cart.length})</div><div class="card shop-card">${cart.map(i => `<div class="shop-it done" data-unchk="${i.id}">
+        <span class="box"></span><span class="n">${esc(i.name)}</span></div>`).join("")}</div>
+      ${canEdit() ? `<button class="btn primary wide" id="sh-done" style="margin-bottom:16px">Ho finito</button>` : ""}` : ""}
+    ${soon.length ? `<div class="card"><h2>In arrivo</h2>${soon.map(({ p, left }) => `<div class="row"><span class="n">${esc(p.name)}<br>
+      <span class="muted" style="font-size:12px">ogni ${st[p.id].interval} gg · ${left <= 0 ? "dovrebbe essere finito" : left === 1 ? "domani" : "tra " + left + " giorni"}</span></span>
+      ${canEdit() ? `<button class="btn" data-now="${p.id}" style="padding:6px 14px">+</button>` : ""}</div>`).join("")}</div>` : ""}`;
+  if ($("#sa")) $("#sa").onsubmit = e => {
+    e.preventDefault(); const v = $("#sa-n").value; if (!v.trim()) return;
+    try { const r = addToList(v); toast(r.exists ? `${r.name} è già in lista` : `${r.name} aggiunto`); viewSpesa(); $("#sa-n").focus(); } catch (err) { toast(err.message); }
+  };
+  $$("[data-chk]").forEach(el => el.onclick = e => { if (e.target.closest("button") || !canEdit()) return; checkItem(el.dataset.chk, true); viewSpesa(); });
+  $$("[data-unchk]").forEach(el => el.onclick = () => { if (!canEdit()) return; checkItem(el.dataset.unchk, false); viewSpesa(); });
+  $$("[data-rm]").forEach(b => b.onclick = () => { removeItem(b.dataset.rm, false); viewSpesa(); });
+  $$("[data-snz]").forEach(b => b.onclick = () => { const u = removeItem(b.dataset.snz, true); toast(u ? `Va bene, lo ripropongo dal ${shortDate(u)}` : "Tolto"); viewSpesa(); });
+  $$("[data-now]").forEach(b => b.onclick = () => { addToList(DB.t.shop_products[b.dataset.now].name); viewSpesa(); });
+  if ($("#sh-done")) $("#sh-done").onclick = () => {
+    const n = finishShopping(); viewSpesa();
+    const cat = cats().find(c => c.name === "Spesa alimentare" && !c.deleted_at);
+    if (confirm(`Spesa finita (${n} prodotti). Vuoi registrare anche l'importo?`)) openTx(null, { kind: "spesa", occurred_on: todayIso(), category_id: cat ? cat.id : null });
+  };
+}
+
+/* ==========================================================================
    Scadenze
    ========================================================================== */
 function viewScadenze() {
@@ -375,6 +424,7 @@ function viewScadenze() {
   const next = v.filter(r => r.next_due && r.next_due <= in60 && !due.some(d => d.id === r.id && d.due === r.next_due))
     .sort((a, b) => a.next_due.localeCompare(b.next_due));
   $("#view").innerHTML = `
+    <button class="btn link" id="dl-back" style="margin:-6px 0 6px">‹ Riepilogo</button>
     <div class="card"><div class="muted" style="font-size:13px">Spese fisse al mese</div><div class="big out num" style="font-size:26px;font-weight:700">${eur(fixed)}</div></div>
     <div class="card"><h2>Scadenze di ${MESI[+S.month.slice(5) - 1]}</h2>
       ${due.length ? due.map(r => `<div class="row"><span class="muted num" style="width:48px">${shortDate(r.due)}</span>
@@ -392,6 +442,7 @@ function viewScadenze() {
       <span class="n">${esc(r.name)}</span><b class="num">${eur(r.amount)}</b></div>`).join("")}</div>` : ""}
     <p class="hint" style="margin:4px">Le spese ricorrenti si gestiscono dal programma sul Mac. Quelle pagate in banca si segnano da sole quando importi l'estratto conto; per le altre usa «Registra».</p>`;
   $$("[data-gofam]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "scadenze"; render(); window.scrollTo(0, 0); });
+  $("#dl-back").onclick = () => { S.view = "home"; render(); window.scrollTo(0, 0); };
   $$("[data-reg]").forEach(b => b.onclick = async () => {
     const r = DB.t.recurrings[b.dataset.reg];
     if (!confirm(`Registrare il pagamento di «${r.name}» (${eur(r.amount)})?`)) return;
@@ -790,5 +841,6 @@ async function start() {
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && DB.session) sync().then(() => !$("#sheet") && render()); });
 window.addEventListener("online", () => DB.session && sync().then(() => !$("#sheet") && render()));
 setInterval(() => { if (document.visibilityState === "visible" && DB.session && !$("#sheet")) sync().then(render); }, 120000);
+setInterval(() => { if (S.view === "spesa" && document.visibilityState === "visible" && DB.session && !$("#sheet") && navigator.onLine) sync().then(() => S.view === "spesa" && !$("#sheet") && render()); }, 15000);
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => { });
 start();

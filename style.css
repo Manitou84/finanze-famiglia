@@ -163,3 +163,18 @@ label.f > span { display: block; font-size: 13px; color: var(--muted); margin: 0
 .trip-w { cursor: pointer; } .trip-w.past { opacity: .75; }
 .card.alert.ok { background: var(--in-bg); }
 .ti-w { cursor: pointer; }
+
+/* ---------- spesa ---------- */
+.shop-add { display: flex; gap: 8px; margin-bottom: 14px; }
+.shop-add input { flex: 1; }
+.shop-add .btn { width: 46px; padding: 0; font-size: 22px; }
+.shop-dep { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 4px 6px 6px; }
+.card.shop-card { padding: 2px 16px; margin-bottom: 14px; }
+.shop-it { display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px solid var(--line); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.shop-it:last-child { border-bottom: 0; }
+.shop-it .n { flex: 1; font-size: 16px; }
+.shop-it .box { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--line2); flex: none; display: grid; place-items: center; }
+.shop-it.done .box { background: var(--accent); border-color: var(--accent); }
+.shop-it.done .box::after { content: ""; width: 6px; height: 11px; border: solid var(--panel); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg) translate(-1px, -1px); }
+.shop-it.done .n { text-decoration: line-through; color: var(--muted); }
+.shop-it .btn.link { font-size: 13px; padding: 6px 0; }
