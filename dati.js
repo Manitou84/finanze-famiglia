@@ -143,6 +143,8 @@ function sync() {
       const mem = await req("GET", "/rest/v1/household_members", { token: tk, params: { select: "user_id,display_name,role", household_id: "eq." + DB.hh } });
       DB.members = Object.fromEntries(mem.map(m => [m.user_id, m.display_name || "?"]));
       const me = mem.find(m => m.user_id === uid()); if (me) DB.role = me.role;
+      const hh = await req("GET", "/rest/v1/households", { token: tk, params: { select: "name", id: "eq." + DB.hh } });
+      if (hh && hh[0] && hh[0].name) DB.hhName = hh[0].name;   // nome della famiglia sempre aggiornato
       for (const t of Object.keys(TABLES)) await pull(t, tk);
       await push(tk);
       DB.lastSync = nowIso(); syncError = null;
