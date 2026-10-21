@@ -204,13 +204,14 @@ function viewHome() {
       <button class="btn link" id="all-dl">Tutte le scadenze ›</button>
     </div>
 
-    <div class="card"><h2>Conti</h2>${acc.map(a => `<div class="row"><span class="n">${esc(a.name)}</span><b class="num ${a.balance < 0 ? "out" : ""}">${eur(a.balance)}</b></div>`).join("")}
+    <div class="card"><h2>Conti</h2>${acc.map(a => `<div class="row acc-w" data-acc="${a.id}"><span class="n">${esc(a.name)}</span><b class="num ${a.balance < 0 ? "out" : ""}">${eur(a.balance)}</b>${canEdit() ? '<span class="muted" style="margin-left:8px">›</span>' : ""}</div>`).join("")}
       <div class="row"><span class="n muted">Totale</span><b class="num">${eur(tot)}</b></div></div>
 
     <div class="card"><h2>Ultimi movimenti</h2>${d.tx.length ? `<div class="list">${d.tx.slice(0, 5).map(txRow).join("")}</div>
       <button class="btn link" id="all-tx">Tutti i movimenti</button>` : `<p class="muted">Nessun movimento.</p>`}</div>`;
   $$("[data-gofam]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "scadenze"; render(); window.scrollTo(0, 0); });
   if ($("#fc-open")) $("#fc-open").onclick = openForecast;
+  if (canEdit()) $$("[data-acc]").forEach(el => el.onclick = () => openBalanceW(el.dataset.acc));
   $$("[data-goal]").forEach(el => el.onclick = () => openGoalW(el.dataset.goal));
   if ($("#g-new")) $("#g-new").onclick = () => openGoalEditW();
   $("#all-dl").onclick = () => { S.view = "scadenze"; render(); window.scrollTo(0, 0); };
@@ -293,6 +294,20 @@ function openGoalEditW(g) {
   let st = g.status;
   $$("#ge-s button").forEach(b => { b.classList.toggle("on", b.dataset.s === st); b.onclick = () => { st = b.dataset.s; $$("#ge-s button").forEach(x => x.classList.toggle("on", x === b)); }; });
   if (!g.id) setTimeout(() => $("#ge-n").focus(), 250);
+}
+
+function openBalanceW(id) {
+  const a = balances().find(x => x.id === id); if (!a) return;
+  const cash = a.type === "contanti";
+  openSheet(a.name, `
+    <p class="hint">${cash ? "Quanti contanti avete adesso?" : "Scrivi il saldo disponibile che vedi oggi sull'app della banca."} Lo allineo correggendo il saldo iniziale, senza creare movimenti finti.</p>
+    <div class="card"><div class="muted" style="font-size:13px">Secondo l'app</div><b class="num" style="font-size:22px">${eur(a.balance)}</b></div>
+    <input class="amount num" id="bw-v" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Saldo di oggi"><div class="amount-line">${cash ? "contanti contati" : "saldo in banca oggi"}</div>
+    <p class="hint" id="bw-d"></p>`,
+    () => { const d = setAccountBalance(id, $("#bw-v").value); return d ? `Allineato (correzione di ${eur(d)})` : "Coincideva già"; }, { saveLabel: "Allinea" });
+  setTimeout(() => $("#bw-v").focus(), 250);
+  $("#bw-v").oninput = () => { const v = parseAmount($("#bw-v").value); if (v == null || isNaN(v)) { $("#bw-d").textContent = ""; return; }
+    const d = round2(v - a.balance); $("#bw-d").textContent = d === 0 ? "Coincide." : `Differenza: ${d > 0 ? "+" : "−"}${eur(Math.abs(d))}`; };
 }
 
 /* ==========================================================================

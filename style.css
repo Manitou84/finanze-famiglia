@@ -183,3 +183,4 @@ label.f > span { display: block; font-size: 13px; color: var(--muted); margin: 0
 .fc-w { cursor: pointer; } .fc-w.low { background: var(--out-bg); }
 .goal-w { cursor: pointer; margin-bottom: 14px; }
 details summary { color: var(--accent); font-size: 13px; margin: 8px 0 4px; cursor: pointer; }
+.acc-w { cursor: pointer; }

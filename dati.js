@@ -919,3 +919,16 @@ function forecast() {
   return { balance: startBal, accounts: liquid, daily, span_days: span, usual_income: usual, income_now: gotNow, months, settings: st, goals_monthly: goalsMonthly,
     warning: warn ? { month: warn.month, end: warn.end } : null };
 }
+
+/* ---------- saldo reale di un conto (stessa regola del Mac: corregge il saldo iniziale) ---------- */
+function setAccountBalance(accountId, value) {
+  guard();
+  const target = parseAmount(value); if (target == null || isNaN(target)) throw new Error("Scrivi il saldo di oggi");
+  const a = DB.t.accounts[accountId]; if (!a) throw new Error("Conto non trovato");
+  const today = todayIso();
+  const moved = rows("transactions").filter(t => t.occurred_on <= today).reduce((s, t) => s + (t.account_id === accountId
+    ? (t.kind === "entrata" ? Number(t.amount) : -Number(t.amount)) : t.kind === "trasferimento" && t.transfer_account_id === accountId ? Number(t.amount) : 0), 0);
+  const diff = round2(target - (Number(a.opening_balance) + moved));
+  write("accounts", { id: accountId, opening_balance: round2(Number(a.opening_balance) + diff) });
+  return diff;
+}

@@ -1,6 +1,6 @@
 /* Finanze di Famiglia — rende la web app apribile anche senza rete.
    I dati non passano di qui: vanno a Supabase e restano nel telefono. */
-const CACHE = "finanze-v9";
+const CACHE = "finanze-v11";
 const FILES = ["./", "index.html", "style.css", "app.js", "dati.js", "scontrino.js", "config.js", "regole_predefinite.json",
   "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 self.addEventListener("install", e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
@@ -9,7 +9,8 @@ self.addEventListener("activate", e => e.waitUntil(caches.keys()
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;   // Supabase e lettore scontrini: sempre in rete
-  // prima la rete (gli aggiornamenti arrivano subito), se manca la copia salvata
-  e.respondWith(fetch(e.request).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; })
+  // prima la rete, chiedendo sempre la versione aggiornata (GitHub altrimenti tiene in memoria i file per 10 minuti);
+  // senza rete, la copia salvata
+  e.respondWith(fetch(e.request, { cache: "no-cache" }).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; })
     .catch(() => caches.match(e.request).then(r => r || caches.match("index.html"))));
 });
