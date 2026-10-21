@@ -176,6 +176,8 @@ function viewHome() {
       <div style="width:${Math.max(0, saved) / sumIO * 100}%;background:var(--in)"></div></div>
     <div class="legend"><span><i class="dot" style="background:var(--out)"></i>Speso</span><span><i class="dot" style="background:var(--in)"></i>Messo da parte</span>
       ${d.income ? `<span>${Math.round(Math.max(0, saved) / d.income * 100)}% risparmiato</span>` : ""}</div>
+    ${homeForecastCard()}
+    ${homeGoalsCard()}
 
     <div class="card"><h2>Dove sono andati i soldi</h2>
       ${rowsCat.length ? `<div class="donut-wrap">${donut(rowsCat, d.expense)}<div class="lst">${rowsCat.map(r => `<div class="row" style="padding:6px 0">
@@ -208,10 +210,89 @@ function viewHome() {
     <div class="card"><h2>Ultimi movimenti</h2>${d.tx.length ? `<div class="list">${d.tx.slice(0, 5).map(txRow).join("")}</div>
       <button class="btn link" id="all-tx">Tutti i movimenti</button>` : `<p class="muted">Nessun movimento.</p>`}</div>`;
   $$("[data-gofam]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "scadenze"; render(); window.scrollTo(0, 0); });
+  if ($("#fc-open")) $("#fc-open").onclick = openForecast;
+  $$("[data-goal]").forEach(el => el.onclick = () => openGoalW(el.dataset.goal));
+  if ($("#g-new")) $("#g-new").onclick = () => openGoalEditW();
   $("#all-dl").onclick = () => { S.view = "scadenze"; render(); window.scrollTo(0, 0); };
   $$("[data-gotrip]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "vacanze"; render(); openTripDetail(el.dataset.gotrip); });
   if ($("#all-tx")) $("#all-tx").onclick = () => { S.view = "movimenti"; render(); window.scrollTo(0, 0); };
   bindTxRows(d.tx);
+}
+
+/* ==========================================================================
+   Previsione e obiettivi (Riepilogo)
+   ========================================================================== */
+function homeForecastCard() {
+  if (S.month !== thisMonth()) return "";
+  const f = forecast(), m = f.months[0]; if (!m) return "";
+  const low = m.end < f.settings.threshold;
+  return `<div class="card fc-w ${low ? "low" : ""}" id="fc-open"><div class="row" style="padding:0;border:0"><span class="n"><span class="muted" style="font-size:13px">Previsto a fine ${MESI[+m.month.slice(5) - 1]}</span><br>
+      <b class="num" style="font-size:24px">${eur(m.end)}</b></span><span class="muted">›</span></div>
+    <div class="muted" style="font-size:12px;margin-top:4px">Oggi ${eur(f.balance)}${f.months[1] ? ` · fine ${MESI[+f.months[1].month.slice(5) - 1]} ${eur(f.months[1].end)}` : ""}</div>
+    ${f.warning ? `<div class="badge late" style="margin-top:8px">Sotto i ${eur(f.settings.threshold)} a fine ${MESI[+f.warning.month.slice(5) - 1]}</div>` : ""}</div>`;
+}
+function openForecast() {
+  const f = forecast();
+  openSheet("Previsione", `
+    <div class="card"><div class="muted" style="font-size:13px">Oggi sui conti (${f.accounts.map(a => esc(a.name)).join(", ")})</div><b class="num" style="font-size:24px">${eur(f.balance)}</b></div>
+    ${f.months.map((m, i) => `<div class="card"><h2>${i === 0 ? "Resto di " : ""}${MESI[+m.month.slice(5) - 1]} ${m.month.slice(0, 4)}</h2>
+      <div class="row"><span class="n">Partenza</span><b class="num">${eur(m.start)}</b></div>
+      ${m.income_recurring ? `<div class="row"><span class="n">Entrate ricorrenti</span><b class="num in">+${eur(m.income_recurring)}</b></div>` : ""}
+      <div class="row"><span class="n">Entrate abituali</span><b class="num in">+${eur(m.income_usual)}</b></div>
+      <div class="row"><span class="n">Spese fisse e scadenze</span><b class="num out">−${eur(m.fixed)}</b></div>
+      <div class="row"><span class="n">Spese di tutti i giorni<br><span class="muted" style="font-size:12px">${m.days} gg × ${eur(f.daily)}</span></span><b class="num out">−${eur(m.variable)}</b></div>
+      <div class="row"><span class="n"><b>Previsto a fine mese</b></span><b class="num ${m.end < f.settings.threshold ? "out" : ""}">${eur(m.end)}</b></div>
+      ${f.goals_monthly ? `<p class="hint">Dopo aver messo da parte per gli obiettivi: ${eur(m.after_goals)}</p>` : ""}
+      ${m.items.length ? `<details ${i === 0 ? "open" : ""}><summary>${m.items.length} voci in calendario</summary>${m.items.map(x => `<div class="row"><span class="muted num" style="width:50px">${shortDate(x.date)}</span>
+        <span class="n">${esc(x.name)}${x.late ? ' <span class="badge late">in ritardo</span>' : ""}</span><b class="num ${x.amount > 0 ? "in" : ""}">${x.amount == null ? "?" : (x.amount > 0 ? "+" : "−") + eur(Math.abs(x.amount))}</b></div>`).join("")}</details>` : ""}</div>`).join("")}
+    <p class="hint">Stima: saldo di oggi, più entrate ricorrenti e abituali, meno spese fisse, scadenze e la media delle spese di tutti i giorni (ultimi ${f.span_days} giorni). Soglia e periodo si cambiano dal Mac.</p>`);
+}
+function homeGoalsCard() {
+  const g = goalsView(), act = g.goals.filter(x => x.status === "attivo");
+  if (!act.length && !canEdit()) return "";
+  return `<div class="card"><h2>Obiettivi</h2>
+    ${act.map(x => `<div class="goal-w" data-goal="${x.id}"><div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:5px"><span>${esc(x.name)}</span>
+      <span class="num muted">${eur(x.saved)} di ${eur(x.target)}</span></div>
+      <div class="bar"><div style="width:${x.pct}%;background:${x.color}"></div></div>
+      <div class="muted" style="font-size:12px;margin-top:4px">${x.late ? `<span class="out">scadenza passata</span>` : x.monthly ? `${eur(x.monthly)} al mese · entro ${shortDate(x.due_date)} ${x.due_date.slice(0, 4)}` : x.left ? `mancano ${eur(x.left)}` : ""}</div></div>`).join("")
+      || `<p class="hint">Fondo emergenze, auto nuova, una vacanza: segna cifra e data e ti dico quanto mettere da parte ogni mese.</p>`}
+    ${canEdit() ? `<button class="btn link" id="g-new">+ Nuovo obiettivo</button>` : ""}</div>`;
+}
+function openGoalW(id) {
+  const g = goalsView().goals.find(x => x.id === id); if (!g) return;
+  const { sheet } = openSheet(g.name, `
+    <div class="card" style="text-align:center"><b class="num" style="font-size:28px">${eur(g.saved)}</b><div class="muted">di ${eur(g.target)} · ${Math.round(g.pct)}%</div>
+      <div class="bar" style="margin:12px 0 6px"><div style="width:${g.pct}%;background:${g.color}"></div></div>
+      <div class="muted" style="font-size:13px">${g.status === "raggiunto" ? "Obiettivo raggiunto 🎉" : g.late ? "Scadenza passata" : g.monthly ? `Servono ${eur(g.monthly)} al mese per ${g.months_left} ${g.months_left === 1 ? "mese" : "mesi"}` : ""}</div></div>
+    ${canEdit() && g.status === "attivo" ? `<input class="amount num" id="gw-a" inputmode="decimal" placeholder="0,00" value="${g.monthly ? amountText(g.monthly) : ""}" aria-label="Importo"><div class="amount-line">euro</div>
+      <label class="f"><span>Nota (facoltativa)</span><input type="text" id="gw-n"></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px"><button class="btn primary" id="gw-in">Metti da parte</button><button class="btn" id="gw-out">Preleva</button></div>` : ""}
+    ${g.moves.length ? `<div class="card"><h2>Movimenti</h2>${g.moves.slice(0, 30).map(m => `<div class="row"><span class="muted num" style="width:50px">${shortDate(m.occurred_on)}</span>
+      <span class="n">${esc(m.note || (m.amount > 0 ? "Messo da parte" : "Prelevato"))}<br><span class="muted" style="font-size:12px">${esc(m.updated_by || "")}</span></span>
+      <b class="num ${m.amount > 0 ? "in" : "out"}">${m.amount > 0 ? "+" : "−"}${eur(Math.abs(m.amount))}</b>${canEdit() ? `<button class="btn link" data-gd="${m.id}" style="margin-left:8px">✕</button>` : ""}</div>`).join("")}</div>` : ""}
+    ${canEdit() ? `<button class="btn wide" id="gw-edit">Modifica obiettivo</button>` : ""}`);
+  const reopen = msg => { sheet.remove(); if (msg) toast(msg); openGoalW(id); };
+  const move = w => { try { const r = addGoalMove(id, $("#gw-a").value, $("#gw-n").value, w); reopen(r ? `Obiettivo raggiunto! 🎉` : w ? "Prelevato" : "Messo da parte"); } catch (e) { $("#se", sheet).textContent = e.message; } };
+  if ($("#gw-in", sheet)) { $("#gw-in", sheet).onclick = () => move(false); $("#gw-out", sheet).onclick = () => move(true); }
+  $$("[data-gd]", sheet).forEach(b => b.onclick = () => { if (confirm("Eliminare questo movimento?")) { deleteGoalMove(b.dataset.gd); reopen(); } });
+  if ($("#gw-edit", sheet)) $("#gw-edit", sheet).onclick = () => { sheet.remove(); openGoalEditW(DB.t.goals[id]); };
+}
+function openGoalEditW(g) {
+  g = g || { status: "attivo" };
+  openSheet(g.id ? "Modifica obiettivo" : "Nuovo obiettivo", `
+    <label class="f"><span>Nome</span><input type="text" id="ge-n" value="${esc(g.name)}" placeholder="Es. Fondo emergenze"></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="f"><span>Cifra (€)</span><input type="text" inputmode="decimal" id="ge-t" value="${g.target ? esc(amountText(g.target)) : ""}"></label>
+      <label class="f"><span>Entro il</span><input type="date" id="ge-d" value="${esc(g.due_date || "")}"></label></div>
+    ${g.id ? `<label class="f"><span>Stato</span></label><div class="seg" id="ge-s" style="margin-bottom:14px">${[["attivo", "Attivo"], ["raggiunto", "Raggiunto"], ["archiviato", "Archiviato"]].map(([k, l]) => `<button data-s="${k}">${l}</button>`).join("")}</div>`
+      : `<label class="f"><span>Già messi da parte (facoltativo)</span><input type="text" inputmode="decimal" id="ge-a" placeholder="0,00"></label>`}
+    <label class="f"><span>Note</span><input type="text" id="ge-no" value="${esc(g.notes)}"></label>
+    <p class="hint">I versamenti tengono il conto di quanto è già da parte: non spostano soldi tra i conti.</p>`,
+    () => { const r = saveGoal({ id: g.id, name: $("#ge-n").value, target: $("#ge-t").value, due_date: $("#ge-d").value, status: st, notes: $("#ge-no").value, start_amount: $("#ge-a") ? $("#ge-a").value : null });
+      setTimeout(() => openGoalW(r.id), 0); return "Salvato"; },
+    g.id ? { del: { label: "Elimina obiettivo", confirm: `Eliminare «${g.name}» e i suoi movimenti?`, run: () => { deleteGoal(g.id); return "Eliminato"; } } } : {});
+  let st = g.status;
+  $$("#ge-s button").forEach(b => { b.classList.toggle("on", b.dataset.s === st); b.onclick = () => { st = b.dataset.s; $$("#ge-s button").forEach(x => x.classList.toggle("on", x === b)); }; });
+  if (!g.id) setTimeout(() => $("#ge-n").focus(), 250);
 }
 
 /* ==========================================================================

@@ -26,6 +26,8 @@ const TABLES = {
     "version", "updated_at", "updated_by", "deleted_at"],
   shop_purchases: ["id", "household_id", "product_id", "bought_on", "version", "updated_at", "updated_by", "deleted_at"],
   shop_list: ["id", "household_id", "product_id", "name", "qty", "source", "added_on", "checked_at", "purchase_id", "version", "updated_at", "updated_by", "deleted_at"],
+  goals: ["id", "household_id", "name", "target", "due_date", "status", "color", "trip_id", "notes", "sort_order", "version", "updated_at", "updated_by", "deleted_at"],
+  goal_moves: ["id", "household_id", "goal_id", "amount", "occurred_on", "note", "version", "updated_at", "updated_by", "deleted_at"],
   transactions: ["id", "household_id", "account_id", "category_id", "kind", "amount", "occurred_on", "description",
     "transfer_account_id", "created_by", "recurring_id", "external_id", "vehicle_id", "person_id", "version", "updated_at", "updated_by", "deleted_at"],
   budgets: ["id", "household_id", "category_id", "month", "amount", "version", "updated_at", "updated_by", "deleted_at"],
@@ -787,4 +789,133 @@ function finishShopping() {
   guard(); const done = shopItems().filter(i => i.checked_at);
   for (const i of done) write("shop_list", { id: i.id, deleted_at: nowIso() });
   return done.length;
+}
+
+
+/* ---------- obiettivi di risparmio (stesse regole del Mac: api_obiettivi.py) ---------- */
+const GOAL_COLORS = ["#2E5E4E", "#378ADD", "#D85A30", "#7F77DD", "#BA7517", "#D4537E", "#1D9E75"];
+function monthsBetween(a, b) {
+  const [ay, am, ad] = a.split("-").map(Number), [by, bm, bd] = b.split("-").map(Number);
+  return Math.max(1, (by - ay) * 12 + (bm - am) + (bd >= ad ? 1 : 0));
+}
+function goalsView() {
+  const today = todayIso(), saved = {};
+  for (const m of rows("goal_moves")) saved[m.goal_id] = (saved[m.goal_id] || 0) + Number(m.amount);
+  const ord = { attivo: 0, raggiunto: 1, archiviato: 2 };
+  const goals = rows("goals").map(g => {
+    const target = Number(g.target), sv = round2(saved[g.id] || 0), left = round2(Math.max(0, target - sv));
+    const x = Object.assign({}, g, { target, saved: sv, left, pct: target ? Math.min(100, sv / target * 100) : 0, monthly: null, months_left: null, late: false,
+      moves: rows("goal_moves").filter(m => m.goal_id === g.id).map(m => Object.assign({}, m, { amount: Number(m.amount) }))
+        .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on) || String(b.updated_at).localeCompare(String(a.updated_at))) });
+    if (g.due_date && left > 0 && g.status === "attivo") {
+      if (g.due_date < today) x.late = true;
+      else { x.months_left = monthsBetween(today, g.due_date); x.monthly = round2(left / x.months_left); }
+    }
+    return x;
+  }).sort((a, b) => (ord[a.status] - ord[b.status]) || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
+  const act = goals.filter(g => g.status === "attivo");
+  return { goals, monthly_total: round2(act.reduce((s, g) => s + (g.monthly || 0), 0)),
+    saved_total: round2(act.reduce((s, g) => s + g.saved, 0)), target_total: round2(act.reduce((s, g) => s + g.target, 0)) };
+}
+function saveGoal(d) {
+  guard();
+  const name = (d.name || "").trim(); if (!name) throw new Error("Dai un nome all'obiettivo (es. Fondo emergenze)");
+  const target = parseAmount(d.target); if (!target || target <= 0) throw new Error("Indica quanto volete mettere da parte");
+  const status = ["attivo", "raggiunto", "archiviato"].includes(d.status) ? d.status : "attivo";
+  const row = { id: d.id || uuid4(), name, target, due_date: d.due_date || null, status, notes: (d.notes || "").trim() || null, deleted_at: null };
+  if (!d.id) { const n = Object.keys(DB.t.goals).length; row.color = GOAL_COLORS[n % GOAL_COLORS.length]; row.sort_order = n + 1; row.trip_id = null; }
+  write("goals", row);
+  const start = d.start_amount ? parseAmount(d.start_amount) : null;
+  if (start && !d.id) write("goal_moves", { id: uuid4(), goal_id: row.id, amount: start, occurred_on: todayIso(), note: "Già da parte", deleted_at: null });
+  return row;
+}
+function deleteGoal(id) {
+  guard();
+  for (const m of rows("goal_moves")) if (m.goal_id === id) write("goal_moves", { id: m.id, deleted_at: nowIso() });
+  write("goals", { id, deleted_at: nowIso() });
+}
+function addGoalMove(goalId, amount, note, withdraw) {
+  guard(); let v = parseAmount(amount); if (!v) throw new Error("Inserisci l'importo");
+  v = withdraw ? -Math.abs(v) : Math.abs(v);
+  write("goal_moves", { id: uuid4(), goal_id: goalId, amount: v, occurred_on: todayIso(), note: (note || "").trim() || null, deleted_at: null });
+  const g = DB.t.goals[goalId], saved = rows("goal_moves").filter(m => m.goal_id === goalId).reduce((s, m) => s + Number(m.amount), 0);
+  const reached = g.status === "attivo" && saved >= Number(g.target);
+  if (reached) write("goals", { id: goalId, status: "raggiunto" });
+  return reached;
+}
+function deleteGoalMove(id) { guard(); write("goal_moves", { id, deleted_at: nowIso() }); }
+
+/* ---------- previsione di fine mese (stesse regole del Mac: api_previsione.py) ---------- */
+const LIQUID = ["conto", "carta", "contanti"];
+const CAR_TYPES = [
+  ["Carburante", ["eni ", "enilive", "q8", "tamoil", "esso", "agip", "api-ip", "ip ", "carburant", "benzina", "gasolio", "distributore", "gpl", "metano", "self service", "ricarica auto", "fuel", "stazione"]],
+  ["Manutenzione", ["officina", "gommista", "tagliando", "revisione", "carrozzeria", "ricambi", "lavaggio", "norauto", "midas", "pneumatic", "meccanic", "elettrauto"]],
+  ["Assicurazione", ["assicuraz", "polizz", "rca", "unipol", "allianz", "axa", "zurich", "genertel", "linear", "prima.it", "verti", "conte.it"]],
+  ["Bollo", ["bollo auto", "tassa automobilistica", "bollo "]],
+  ["Pedaggi e parcheggi", ["autostrade", "telepass", "pedaggio", "parcheggio", "easypark", "parking", "unipolmove"]],
+];
+function expenseType(text) {
+  const t = norm(text); if (t.includes("imposta di bollo")) return null;
+  for (const [label, words] of CAR_TYPES) if (words.some(w => t.includes(w))) return label;
+  return "Altro";
+}
+function forecastSettings() {
+  const r = DB.t.app_settings[DB.hh + "|forecast_settings"], s = { threshold: 200, days: 90, months: 3 };
+  try { const j = JSON.parse(r && r.value || "{}"); for (const k in s) if (k in j) s[k] = parseInt(j[k], 10); } catch (e) { }
+  return s;
+}
+function forecast() {
+  const today = todayIso(), cur = today.slice(0, 7), st = forecastSettings();
+  const tx = rows("transactions").map(t => Object.assign({}, t, { amount: Number(t.amount) }));
+  const accs = rows("accounts").sort((a, b) => a.sort_order - b.sort_order).map(a => ({ ...a, balance: round2(Number(a.opening_balance) + tx.filter(t => t.occurred_on <= today)
+    .reduce((s, t) => s + (t.account_id === a.id ? (t.kind === "entrata" ? t.amount : -t.amount) : t.kind === "trasferimento" && t.transfer_account_id === a.id ? t.amount : 0), 0)) }));
+  const liquid = accs.filter(a => LIQUID.includes(a.type));
+  const active = rows("recurrings").filter(r => r.status === "attiva").map(r => Object.assign({}, r, { amount: Number(r.amount) }));
+  const recKeys = active.filter(r => r.kind === "spesa" && r.match_text).map(r => norm(r.match_text).trim()).filter(k => k.length >= 3);
+  const tmap = tripMap(), since = addDays(today, -st.days);
+  const first = tx.reduce((m, t) => !m || t.occurred_on < m ? t.occurred_on : m, null);
+  const variable = tx.filter(t => t.kind === "spesa" && !t.recurring_id && t.occurred_on > since && t.occurred_on <= today && !(t.id in tmap) && !recKeys.some(k => norm(t.description).includes(k)));
+  let span = st.days; if (first) span = Math.max(30, Math.min(st.days, daysTo(today) - daysTo(first) + 1));
+  const daily = variable.length ? round2(variable.reduce((s, t) => s + t.amount, 0) / span) : 0;
+  const m3 = shiftMonth(cur, -3), byM = {};
+  for (const t of tx) if (t.kind === "entrata" && !t.recurring_id && t.occurred_on >= m3 + "-01" && t.occurred_on <= today) byM[t.occurred_on.slice(0, 7)] = (byM[t.occurred_on.slice(0, 7)] || 0) + t.amount;
+  const full = [1, 2, 3].map(i => byM[shiftMonth(cur, -i)] || 0).sort((a, b) => a - b);
+  const usual = full.some(Boolean) ? round2(full[1]) : 0, gotNow = round2(byM[cur] || 0);
+  const covered = words => active.some(r => words.some(w => (r.name + " " + (r.match_text || "")).toLowerCase().includes(w)));
+  const vtx = tx.filter(t => t.vehicle_id && t.kind === "spesa").sort((a, b) => b.occurred_on.localeCompare(a.occurred_on));
+  const carEvents = [];
+  for (const v of activeVehicles()) for (const [f, label, kind, words] of [["bollo_due", "Bollo", "Bollo", ["bollo"]], ["insurance_due", "Assicurazione", "Assicurazione", ["assicuraz", "rc auto", "rca", "polizza"]], ["revision_due", "Revisione", "Manutenzione", ["revisione"]]]) {
+    if (!v[f]) continue;
+    const w2 = f === "insurance_due" && v.insurance_company ? words.concat([v.insurance_company.toLowerCase()]) : words;
+    if (covered(w2)) continue;
+    const last = vtx.find(t => t.vehicle_id === v.id && expenseType(t.description) === kind && (f !== "revision_due" || (t.description || "").toLowerCase().includes("revision")));
+    carEvents.push({ date: v[f], name: `${label} ${v.name}`, amount: last ? last.amount : null, tag: "auto" });
+  }
+  const tripItems = rows("trip_items").filter(i => !i.booked && i.amount != null && i.due_date && trips().some(t => t.id === i.trip_id && t.status !== "annullata"));
+  const goalsMonthly = goalsView().monthly_total;
+  const months = []; let bal = round2(liquid.reduce((s, a) => s + a.balance, 0)); const startBal = bal;
+  for (let i = 0; i < st.months; i++) {
+    const m = shiftMonth(cur, i), mStart = m + "-01", mEnd = `${m}-${pad2(new Date(+m.slice(0, 4), +m.slice(5), 0).getDate())}`;
+    const from = i === 0 ? addDays(today, 1) : mStart, items = [];
+    for (const r of active) {
+      if (!isDue(r, m) || r.start_month.slice(0, 7) > m) continue;
+      const d = dueDate(r, m);
+      if (i === 0 && paidTx(d, linkedTx(r.id))) continue;
+      const sign = r.kind === "entrata" ? 1 : -1;
+      items.push({ date: d, name: r.name, amount: sign * r.amount, tag: sign > 0 ? "entrata" : "ricorrente", late: i === 0 && d < today });
+    }
+    for (const e of carEvents) if (mStart <= e.date && e.date <= mEnd && (i > 0 || e.date >= today)) items.push({ date: e.date, name: e.name, amount: e.amount ? -e.amount : null, tag: "auto", estimated: true });
+    for (const t of tripItems) if (mStart <= t.due_date && t.due_date <= mEnd) items.push({ date: t.due_date, name: `${t.name} (${DB.t.trips[t.trip_id].name})`, amount: -Number(t.amount), tag: "vacanza" });
+    const daysLeft = mEnd >= from ? daysTo(mEnd) - daysTo(from) + 1 : 0;
+    const varOut = round2(daily * daysLeft), incMore = round2(Math.max(0, usual - (i === 0 ? gotNow : 0)));
+    const recIn = round2(items.filter(x => x.amount > 0).reduce((s, x) => s + x.amount, 0));
+    const fixed = round2(-items.filter(x => x.amount != null && x.amount < 0).reduce((s, x) => s + x.amount, 0));
+    const end = round2(bal + recIn + incMore - fixed - varOut);
+    months.push({ month: m, start: bal, income_recurring: recIn, income_usual: incMore, fixed, variable: varOut, days: daysLeft, end,
+      after_goals: round2(end - goalsMonthly * (i + 1)), items: items.sort((a, b) => a.date.localeCompare(b.date)), unknown: items.filter(x => x.amount == null).map(x => x.name) });
+    bal = end;
+  }
+  const warn = months.find(m => m.end < st.threshold);
+  return { balance: startBal, accounts: liquid, daily, span_days: span, usual_income: usual, income_now: gotNow, months, settings: st, goals_monthly: goalsMonthly,
+    warning: warn ? { month: warn.month, end: warn.end } : null };
 }
