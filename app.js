@@ -176,6 +176,8 @@ function viewHome() {
       <div style="width:${Math.max(0, saved) / sumIO * 100}%;background:var(--in)"></div></div>
     <div class="legend"><span><i class="dot" style="background:var(--out)"></i>Speso</span><span><i class="dot" style="background:var(--in)"></i>Messo da parte</span>
       ${d.income ? `<span>${Math.round(Math.max(0, saved) / d.income * 100)}% risparmiato</span>` : ""}</div>
+    ${S.month === thisMonth() ? homeKmCard() : ""}
+    ${S.month === thisMonth() && new Date().getDate() <= 10 && !S.sumSeen ? homeSummaryCard() : ""}
     ${homeForecastCard()}
     ${homeGoalsCard()}
 
@@ -205,12 +207,15 @@ function viewHome() {
     </div>
 
     <div class="card"><h2>Conti</h2>${acc.map(a => `<div class="row acc-w" data-acc="${a.id}"><span class="n">${esc(a.name)}</span><b class="num ${a.balance < 0 ? "out" : ""}">${eur(a.balance)}</b>${canEdit() ? '<span class="muted" style="margin-left:8px">›</span>' : ""}</div>`).join("")}
-      <div class="row"><span class="n muted">Totale</span><b class="num">${eur(tot)}</b></div></div>
+      <div class="row"><span class="n muted">Totale</span><b class="num">${eur(tot)}</b></div>
+      ${fundAccount() ? `<div class="row"><span class="n muted">di cui fondo lavoro (soldi dell'azienda)</span><span class="num muted">${eur(fundAvailable())}</span></div>` : ""}</div>
 
     <div class="card"><h2>Ultimi movimenti</h2>${d.tx.length ? `<div class="list">${d.tx.slice(0, 5).map(txRow).join("")}</div>
       <button class="btn link" id="all-tx">Tutti i movimenti</button>` : `<p class="muted">Nessun movimento.</p>`}</div>`;
   $$("[data-gofam]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "scadenze"; render(); window.scrollTo(0, 0); });
   if ($("#fc-open")) $("#fc-open").onclick = openForecast;
+  bindHomeKm();
+  if ($("#sum-hide")) $("#sum-hide").onclick = e => { e.stopPropagation(); S.sumSeen = true; render(); };
   if (canEdit()) $$("[data-acc]").forEach(el => el.onclick = () => openBalanceW(el.dataset.acc));
   $$("[data-goal]").forEach(el => el.onclick = () => openGoalW(el.dataset.goal));
   if ($("#g-new")) $("#g-new").onclick = () => openGoalEditW();
@@ -223,6 +228,11 @@ function viewHome() {
 /* ==========================================================================
    Previsione e obiettivi (Riepilogo)
    ========================================================================== */
+function homeSummaryCard() {
+  const m = monthSummary(); if (!m.highlights.length) return "";
+  return `<div class="card sum-w"><div class="row" style="padding:0;border:0"><h2 class="n" style="margin:0">Com'è andato ${MESI[+m.month.slice(5) - 1]}</h2>
+    <button class="btn link" id="sum-hide">Nascondi</button></div><ul>${m.highlights.map(h => `<li>${esc(h)}</li>`).join("")}</ul></div>`;
+}
 function homeForecastCard() {
   if (S.month !== thisMonth()) return "";
   const f = forecast(), m = f.months[0]; if (!m) return "";
@@ -311,9 +321,109 @@ function openBalanceW(id) {
 }
 
 /* ==========================================================================
+   Km dell'auto aziendale
+   ========================================================================== */
+const GIORNI_L = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+const dayLabel = iso => { const d = new Date(iso + "T12:00:00"); return `${GIORNI_L[d.getDay()]} ${d.getDate()} ${MESI[d.getMonth()]}`; };
+const fmtKm = v => v == null ? "—" : new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 }).format(v);
+function lastSunday() { const t = todayIso(), d = new Date(t + "T12:00:00").getDay(); return d === 0 ? t : addDays(t, -d); }
+function homeKmCard() {
+  if (!rows("work_km").length && !canEdit()) return "";
+  const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
+  const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
+  const weNeeded = (dow === 0 || dow === 1) && !rs.some(r => r.day === sun && r.kind === "weekend") && rs.length;
+  const wk = kmWeek(mondayOf(t)), miss = wk.days.filter(x => x.missing && x.day < t).length;
+  return `<div class="card km-w"><div class="row" style="padding:0;border:0"><h2 class="n" style="margin:0">Km lavoro</h2><button class="btn link" id="km-week">Settimana ›</button></div>
+    ${dow >= 1 && dow <= 5 ? (todayE ? `<p class="muted" style="margin:6px 0 0">Oggi: <b>${fmtKm(todayE.day_km)} km</b>${todayE.a ? ` · ${esc(todayE.a)}` : ""}</p>`
+      : `<button class="btn primary wide" id="km-today" style="margin-top:10px">Segna i km di oggi</button>`) : ""}
+    ${weNeeded ? `<button class="btn ${dow === 0 ? "primary" : ""} wide" id="km-we" style="margin-top:10px">Segna i km del weekend</button>` : ""}
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Questa settimana ${fmtKm(wk.km)} km${miss ? ` · <span class="out">${miss} ${miss === 1 ? "giorno" : "giorni"} da completare</span>` : ""}</p></div>`;
+}
+function bindHomeKm() {
+  if ($("#km-today")) $("#km-today").onclick = () => openKm("giorno");
+  if ($("#km-we")) $("#km-we").onclick = () => openKm("weekend");
+  if ($("#km-week")) $("#km-week").onclick = () => openKmWeek(mondayOf(todayIso()));
+}
+function tagField(id, label, values, suggestions, placeholder) {
+  return `<label class="f"><span>${label}</span></label><div class="tags" id="${id}">${values.map(v => `<button type="button" class="tag" data-v="${esc(v)}">${esc(v)} ✕</button>`).join("")}
+    <input type="text" list="${id}-l" placeholder="${placeholder}" autocomplete="off" enterkeyhint="next"></div>
+    <datalist id="${id}-l">${suggestions.map(v => `<option value="${esc(v)}">`).join("")}</datalist>`;
+}
+function bindTags(root, id) {
+  const box = $("#" + id, root), inp = $("input", box);
+  const add = () => { kmSplit(inp.value).forEach(v => { if (![...$$(".tag", box)].some(t => t.dataset.v.toLowerCase() === v.toLowerCase()))
+      inp.insertAdjacentHTML("beforebegin", `<button type="button" class="tag" data-v="${esc(v)}">${esc(v)} ✕</button>`); }); inp.value = ""; bind(); };
+  const bind = () => $$(".tag", box).forEach(t => t.onclick = () => { t.remove(); });
+  inp.onkeydown = e => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } };
+  inp.onchange = add; bind();
+  return () => { add(); return $$(".tag", box).map(t => t.dataset.v); };
+}
+function openKm(kind, day, entry) {
+  kind = kind || "giorno";
+  const s = kmSettings(), rs = kmRows();
+  day = day || (kind === "weekend" ? lastSunday() : todayIso());
+  const e = entry || rs.find(r => r.day === day && r.kind === kind) || null;
+  const prev = rs.filter(r => r.odometer != null && (r.day < day || (r.day === day && kind === "weekend" && r.kind === "giorno"))).pop();
+  const lastDay = rs.filter(r => r.kind === "giorno" && r.day < day).pop();
+  const sug = kmSuggestions(), cars = [...new Set((s.cars || []).map(c => c.name))];
+  const { sheet } = openSheet(kind === "weekend" ? "Km del weekend" : "Km di lavoro", `
+    <label class="f"><span>${kind === "weekend" ? "Domenica" : "Giorno"}</span><input type="date" id="km-d" value="${day}"></label>
+    <input class="amount num" id="km-o" inputmode="decimal" placeholder="contachilometri" value="${e && e.odometer != null ? esc(String(e.odometer).replace(".", ",")) : ""}" autocomplete="off" aria-label="Contachilometri">
+    <div class="amount-line" id="km-hint">${prev ? `ultima lettura ${fmtKm(prev.odometer)} · ${dayLabel(prev.day)}` : "km del contachilometri"}</div>
+    ${kind === "weekend" ? `<p class="hint">Scrivi il contachilometri di domenica sera (o di lunedì mattina, prima di partire). I km del fine settimana non entrano nei km di lavoro.</p>` : `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Da</span><input type="text" id="km-da" value="${esc(e ? e.da : s.da)}"></label>
+        <label class="f"><span>Auto</span><select id="km-car">${(cars.includes(carOn(s, day)) ? cars : cars.concat(carOn(s, day))).map(c => `<option ${c === (e ? e.car : carOn(s, day)) ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label></div>
+      ${lastDay && !e ? `<button class="btn link" id="km-copy" style="margin:-4px 0 6px">Copia paesi e clienti di ${dayLabel(lastDay.day)}</button>` : ""}
+      <div id="km-tags">${tagField("km-a", "A (paesi visitati)", kmSplit(e && e.a), sug.places, "Scrivi un paese e premi Invio")}
+      ${tagField("km-c", "Clienti", kmSplit(e && e.clients), sug.clients, "Scrivi un cliente e premi Invio")}</div>
+      <details style="margin-top:6px"><summary>Non hai il contachilometri? Scrivi i km del giorno</summary>
+        <label class="f" style="margin-top:8px"><span>Km del giorno</span><input type="text" inputmode="decimal" id="km-k" value="${e && e.km != null ? esc(String(e.km).replace(".", ",")) : ""}"></label></details>`}`,
+    async () => {
+      const r = await saveKm({ kind, day: $("#km-d").value, odometer: $("#km-o").value, km: $("#km-k") ? $("#km-k").value : null,
+        da: $("#km-da") ? $("#km-da").value : null, car: $("#km-car") ? $("#km-car").value : null,
+        a: getA ? getA().join(", ") : null, clients: getC ? getC().join(", ") : null });
+      if (r.warning) alert(r.warning);
+      return "Km salvati";
+    },
+    e ? { del: { label: "Elimina", confirm: "Eliminare questa giornata?", run: () => { deleteKm(e.id); return "Eliminata"; } } } : {});
+  let getA = null, getC = null;
+  if (kind === "giorno") { getA = bindTags(sheet, "km-a"); getC = bindTags(sheet, "km-c"); }
+  const hint = () => { const v = parseAmount($("#km-o", sheet).value); if (prev && v && !isNaN(v)) $("#km-hint", sheet).textContent = `= ${fmtKm(round1(v - prev.odometer))} km ${kind === "weekend" ? "nel fine settimana" : "oggi"} · ultima lettura ${fmtKm(prev.odometer)}`; };
+  $("#km-o", sheet).oninput = hint; hint();
+  if ($("#km-copy", sheet)) $("#km-copy", sheet).onclick = () => {
+    $("#km-tags", sheet).innerHTML = tagField("km-a", "A (paesi visitati)", kmSplit(lastDay.a), sug.places, "Scrivi un paese e premi Invio") + tagField("km-c", "Clienti", kmSplit(lastDay.clients), sug.clients, "Scrivi un cliente e premi Invio");
+    getA = bindTags(sheet, "km-a"); getC = bindTags(sheet, "km-c"); $("#km-copy", sheet).remove();
+  };
+  $("#km-d", sheet).onchange = () => { sheet.remove(); document.body.style.overflow = ""; openKm(kind, $("#km-d", sheet).value); };
+  if (!e) setTimeout(() => $("#km-o", sheet).focus(), 250);
+}
+function openKmWeek(mon) {
+  const w = kmWeek(mon), sun = addDays(mon, 6);
+  const { sheet } = openSheet(`Settimana ${shortDate(mon)} – ${shortDate(sun)}`, `
+    <div class="seg" style="margin-bottom:12px"><button id="kw-prev">‹ Precedente</button><button id="kw-next" ${addDays(mon, 7) > todayIso() ? "disabled" : ""}>Successiva ›</button></div>
+    <div class="card"><div class="pw-stats"><div><span>Km di lavoro</span><b class="num">${fmtKm(w.km)}</b></div>
+      <div><span>Weekend</span><b class="num">${w.weekend ? fmtKm(w.weekend.private_km) : "—"}</b></div>
+      <div><span>Contachilometri dom.</span><b class="num">${w.weekend ? fmtKm(w.weekend.odometer) : "—"}</b></div></div></div>
+    <div class="card">${w.days.map(x => `<div class="row km-day" data-d="${x.day}"><span class="n"><b>${dayLabel(x.day)}</b><br>
+      <span class="muted" style="font-size:12px">${x.entry ? `${esc(x.entry.a || "—")}${x.entry.clients ? " · " + esc(x.entry.clients) : ""}` : x.missing ? '<span class="out">da completare</span>' : "—"}</span></span>
+      <b class="num">${x.entry ? fmtKm(x.entry.day_km) + " km" : ""}</b><span class="muted" style="margin-left:6px">›</span></div>`).join("")}
+      <div class="row km-day" data-we="1"><span class="n"><b>Weekend</b><br><span class="muted" style="font-size:12px">${w.weekend ? `contachilometri ${fmtKm(w.weekend.odometer)}` : sun < todayIso() ? '<span class="out">da completare</span>' : "domenica sera"}</span></span>
+        <b class="num">${w.weekend ? fmtKm(w.weekend.private_km) + " km" : ""}</b><span class="muted" style="margin-left:6px">›</span></div></div>
+    <p class="hint">Il report del mese e il file Excel per l'azienda si scaricano dal Mac (Soldi › Km e nota spese).</p>`);
+  $$(".km-day", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); el.dataset.we ? openKm("weekend", sun) : openKm("giorno", el.dataset.d); });
+  $("#kw-prev", sheet).onclick = () => { sheet.remove(); openKmWeek(addDays(mon, -7)); };
+  $("#kw-next", sheet).onclick = () => { sheet.remove(); openKmWeek(addDays(mon, 7)); };
+}
+
+/* ==========================================================================
    Movimenti
    ========================================================================== */
 function txRow(t) {
+  const wk = workKind(t);
+  if (wk) return `<div class="tx" data-id="${t.id}"><div class="w"><div class="t">${esc(t.description || (wk === "spesa" ? "Spesa di lavoro" : "Fondo di lavoro"))}</div>
+    <div class="s"><span class="chip" style="background:#6B5B9522"><span class="dot" style="background:#6B5B95;width:7px;height:7px"></span>${wk === "spesa" ? "Lavoro · fondo aziendale" : "Fondo aziendale"}</span>
+    ${t.updated_by ? `<span>${esc(t.updated_by)}</span>` : ""}</div></div><div class="a num mv">${wk === "spesa" ? "−" : "+"}${eur(t.amount)}</div></div>`;
   const c = catById(t.category_id); const tr = t.kind === "trasferimento";
   const color = tr ? "#3C6A8C" : c ? c.color : "#94A099";
   const acc = DB.t.accounts[t.account_id], to = DB.t.accounts[t.transfer_account_id];
@@ -350,6 +460,9 @@ function openTx(t, preset) {
   if (!accs.length) { toast("Non ci sono conti: aspetta la sincronizzazione"); sync(); return; }
   const x = t ? { ...t } : Object.assign({ kind: "spesa", occurred_on: S.month === thisMonth() ? todayIso() : S.month + "-01",
     account_id: (accs.find(a => a.type === "contanti") || accs[0]).id }, preset || {});
+  const wkEdit = t ? workKind(t) : null, fund = fundAccount();
+  if (wkEdit) { x.kind = wkEdit; x.account_id = wkEdit === "spesa" ? t.account_id : t.transfer_account_id; x.transfer_account_id = null; x.category_id = null; }
+  let work = !!(wkEdit || (preset && preset.work));
   let kind = x.kind, cat = x.category_id || null, catTouched = edit && !!cat;
   const sheet = document.createElement("div"); sheet.className = "sheet"; sheet.id = "sheet";
   sheet.innerHTML = `
@@ -361,6 +474,8 @@ function openTx(t, preset) {
     <div class="amount-line">euro</div>
     <label class="f"><span>Descrizione</span><input type="text" id="xd" value="${esc(x.description)}" placeholder="Es. Esselunga, farmacia, pizzeria" autocomplete="off"></label>
     <div class="sugg" id="xs"></div>
+    ${fund ? `<div class="work-w" id="xwork-w"><label><input type="checkbox" id="xwork" ${work ? "checked" : ""}> <span id="xwork-l"></span></label>
+      <label id="xworkr-w" class="sub"><input type="checkbox" id="xworkr"> Ricorda questa descrizione come di lavoro</label></div>` : ""}
     <div id="xcats"></div>
     ${people().length ? `<div id="xper"></div>` : ""}
     ${trips().filter(v => v.status !== "annullata").length ? `<label class="f" id="xtrip-w"><span>Vacanza</span><select id="xtrip">
@@ -414,8 +529,17 @@ function openTx(t, preset) {
     drawCats(); suggest(); drawPer(); if ($("#xtrip-w")) $("#xtrip-w").style.display = k === "spesa" ? "" : "none";
     $("h2", sheet).textContent = edit ? "Movimento" : k === "spesa" ? "Nuova spesa" : k === "entrata" ? "Nuova entrata" : "Trasferimento";
   };
-  $$("#xk button").forEach(b => b.onclick = () => setKind(b.dataset.k));
+  const setWork = () => {
+    if (!$("#xwork-w")) return;
+    const can = kind !== "trasferimento"; work = can && $("#xwork").checked;
+    $("#xwork-w").style.display = can ? "" : "none";
+    $("#xwork-l").textContent = kind === "entrata" ? "Soldi dell'azienda (anticipo o rimborso del fondo)" : "Spesa di lavoro (fondo dell'azienda)";
+    $("#xworkr-w").style.display = work && $("#xd").value.trim() ? "" : "none";
+    ["#xcats", "#xper", "#xtrip-w", "#xs"].forEach(q => { if ($(q)) $(q).style.display = work ? "none" : (q === "#xtrip-w" && kind !== "spesa" ? "none" : ""); });
+  };
+  $$("#xk button").forEach(b => b.onclick = () => { setKind(b.dataset.k); setWork(); });
   setKind(kind);
+  if ($("#xwork")) { $("#xwork").onchange = setWork; $("#xd").addEventListener("input", setWork); setWork(); }
   if ($("#xtrip")) $("#xtrip").value = tripNow;
   $("#xd").oninput = () => { suggest(); suggestPer(); };
   $("#xc").onclick = close;
@@ -452,11 +576,12 @@ function openTx(t, preset) {
         category_id: cat, transfer_account_id: kind === "trasferimento" ? $("#xto").value : null, description: $("#xd").value,
         ...(kind === "spesa" && (perTouched && (edit ? per !== (x.person_id || null) : per)) ? { person_id: per } : {}),
         ...(edit && kind !== "spesa" && x.person_id ? { person_id: null } : {}),
+        ...($("#xwork") && kind !== "trasferimento" ? { work, work_remember: $("#xworkr").checked } : {}),
         ...(x.recurring_id !== undefined && edit ? { recurring_id: x.recurring_id } : {}), ...(preset && preset.recurring_id ? { recurring_id: preset.recurring_id } : {}) });
-      if ($("#xtrip") && $("#xtrip").value !== tripNow && $("#xtrip").value !== "auto") setTxTrip(r.id, $("#xtrip").value || null);
+      if (!work && $("#xtrip") && $("#xtrip").value !== tripNow && $("#xtrip").value !== "auto") setTxTrip(r.id, $("#xtrip").value || null);
       close();
       const rec = !edit && r.recurring_id && DB.t.recurrings[r.recurring_id];
-      toast(rec ? `Aggiunto e collegato a «${rec.name}»` : edit ? "Movimento aggiornato" : "Aggiunto");
+      toast(work ? (edit ? "Movimento di lavoro aggiornato" : "Messo nel fondo di lavoro") : rec ? `Aggiunto e collegato a «${rec.name}»` : edit ? "Movimento aggiornato" : "Aggiunto");
       S.month = r.occurred_on.slice(0, 7); render();
     } catch (err) { $("#xe").textContent = err.message; }
   };
@@ -926,6 +1051,13 @@ function viewAltro() {
   $("#view").innerHTML = `
     <div class="card"><h2>${esc(DB.members[uid()] || DB.email)}</h2>
       <p class="hint">${esc(DB.email)}, famiglia ${esc(DB.hhName)}, ${({ owner: "amministratore", member: "membro", viewer: "sola lettura" })[DB.role] || ""}</p></div>
+    ${fundAccount() ? (() => { const f = fundAccount(), m = thisMonth(), av = fundAvailable();
+      let amt = null; try { amt = JSON.parse((DB.t.app_settings[DB.hh + "|work_settings"] || {}).value || "{}").amount; } catch (e) { }
+      const sp = round2(rows("transactions").filter(t => t.kind === "trasferimento" && t.transfer_account_id === f.id && t.occurred_on.startsWith(m)).reduce((s, t) => s + Number(t.amount), 0));
+      return `<div class="card"><h2>Fondo spese lavoro</h2><div class="row"><span class="n">Disponibile</span><b class="num">${eur(av)}</b></div>
+        ${amt ? `<div class="row"><span class="n">Da farsi rimborsare</span><b class="num">${eur(Math.max(0, amt - av))}</b></div>` : ""}
+        <div class="row"><span class="n">Speso questo mese</span><b class="num">${eur(sp)}</b></div>
+        <p class="hint">Per segnare una spesa di lavoro tocca + e spunta «Spesa di lavoro». La nota spese si prepara dal Mac.</p></div>`; })() : ""}
     <div class="card"><h2>Sincronizzazione</h2>
       <p class="hint">${statusLine()}${syncError && syncError !== "offline" ? `<br><span class="err">${esc(syncError)}</span>` : ""}</p>
       <p class="hint">Le spese inserite qui senza rete restano nel telefono e partono da sole appena torna la connessione.</p>
@@ -1039,7 +1171,9 @@ async function start() {
   if (!DB.session || !DB.hh) return renderLogin();
   if (lockCfg().enabled) showLock();
   renderShell();
-  sync().then(render);
+  const vai = new URLSearchParams(location.search).get("vai");
+  if (vai && canEdit()) { history.replaceState(null, "", location.pathname); if (vai === "km") openKm("giorno"); if (vai === "km-weekend") openKm("weekend"); }
+  sync().then(() => !$("#sheet") && render());
 }
 document.addEventListener("visibilitychange", () => {
   const c = lockCfg();

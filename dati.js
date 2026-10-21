@@ -28,6 +28,7 @@ const TABLES = {
   shop_list: ["id", "household_id", "product_id", "name", "qty", "source", "added_on", "checked_at", "purchase_id", "version", "updated_at", "updated_by", "deleted_at"],
   goals: ["id", "household_id", "name", "target", "due_date", "status", "color", "trip_id", "notes", "sort_order", "version", "updated_at", "updated_by", "deleted_at"],
   goal_moves: ["id", "household_id", "goal_id", "amount", "occurred_on", "note", "version", "updated_at", "updated_by", "deleted_at"],
+  work_km: ["id", "household_id", "day", "kind", "odometer", "km", "da", "a", "car", "clients", "notes", "version", "updated_at", "updated_by", "deleted_at"],
   transactions: ["id", "household_id", "account_id", "category_id", "kind", "amount", "occurred_on", "description",
     "transfer_account_id", "created_by", "recurring_id", "external_id", "vehicle_id", "person_id", "version", "updated_at", "updated_by", "deleted_at"],
   budgets: ["id", "household_id", "category_id", "month", "amount", "version", "updated_at", "updated_by", "deleted_at"],
@@ -266,6 +267,11 @@ async function saveTransaction(d) {
   else if (!d.id) row.vehicle_id = autoVehicle(row);
   if ("person_id" in d) { row.person_id = d.person_id || null; if (row.description && (d.person_id || d.id)) learnPerson(row.description, row.person_id); }
   else if (!d.id) row.person_id = autoPerson(row);
+  const fund = fundAccount();
+  if (d.work && fund && ["spesa", "entrata"].includes(d.kind)) {
+    applyWork(row, fund.id);
+    if (d.work_remember && row.description) learnWork(row.description, d.kind, true);
+  } else if (d.id && d.work === false && d.work_remember && row.description) learnWork(row.description, d.kind, false);
   write("transactions", row);
   if (row.category_id && row.description) await learn(row.description, row.category_id, row.kind);
   return row;
@@ -302,10 +308,32 @@ function series(month, n) {
   }
   return out;
 }
-function balances() {
+function allBalances() {
   const tx = rows("transactions");
   return rows("accounts").sort((a, b) => a.sort_order - b.sort_order).map(a => ({ ...a, balance: round2(a.opening_balance + tx.reduce((s, t) =>
     s + (t.account_id === a.id ? (t.kind === "entrata" ? t.amount : -t.amount) : t.transfer_account_id === a.id ? t.amount : 0), 0)) }));
+}
+
+const balances = () => allBalances().filter(a => a.type !== "fondo");   // il fondo di lavoro non è un conto vero
+
+/* ---------- fondo spese di lavoro (stesse regole del Mac: api_lavoro.py) ---------- */
+const fundAccount = () => rows("accounts").find(a => a.type === "fondo") || null;
+function workKind(t) {
+  const f = fundAccount(); if (!f || t.kind !== "trasferimento") return null;
+  return t.transfer_account_id === f.id ? "spesa" : t.account_id === f.id ? "entrata" : null;
+}
+function fundAvailable() { const f = allBalances().find(a => a.type === "fondo"); return f ? round2(-f.balance) : null; }
+function workRules() { const r = DB.t.app_settings[DB.hh + "|work_rules"]; try { return r && r.value ? JSON.parse(r.value) : {}; } catch (e) { return {}; } }
+function learnWork(description, kind, on) {
+  const p = learnPattern(String(description || "").split(" · ")[0]); if (!p) return;
+  const rules = workRules();
+  if (on && rules[p] !== kind) rules[p] = kind; else if (!on && p in rules) delete rules[p]; else return;
+  write("app_settings", { key: "work_rules", value: JSON.stringify(rules) });
+}
+function applyWork(row, fundId) {
+  if (row.kind === "spesa") Object.assign(row, { kind: "trasferimento", transfer_account_id: fundId });
+  else if (row.kind === "entrata") { const acc = row.account_id; Object.assign(row, { kind: "trasferimento", account_id: fundId, transfer_account_id: acc }); }
+  return Object.assign(row, { category_id: null, recurring_id: null, vehicle_id: null, person_id: null });
 }
 
 /* ---------- ricorrenti (stesse regole del Mac) ---------- */
@@ -929,7 +957,7 @@ function forecast() {
     bal = end;
   }
   const warn = months.find(m => m.end < st.threshold);
-  return { balance: startBal, accounts: liquid, daily, span_days: span, usual_income: usual, income_now: gotNow, months, settings: st, goals_monthly: goalsMonthly,
+  return { balance: startBal, accounts: liquid, work_available: fundAvailable(), daily, span_days: span, usual_income: usual, income_now: gotNow, months, settings: st, goals_monthly: goalsMonthly,
     warning: warn ? { month: warn.month, end: warn.end } : null };
 }
 
@@ -944,4 +972,97 @@ function setAccountBalance(accountId, value) {
   const diff = round2(target - (Number(a.opening_balance) + moved));
   write("accounts", { id: accountId, opening_balance: round2(Number(a.opening_balance) + diff) });
   return diff;
+}
+
+
+/* ---------- com'è andato il mese (stesse regole del Mac: api_mese.py) ---------- */
+function monthSummary(month) {
+  month = month || shiftMonth(todayIso().slice(0, 7), -1);
+  const [a, b] = monthBounds(month), p3 = monthBounds(shiftMonth(month, -3))[0];
+  const tx = rows("transactions").filter(t => ["spesa", "entrata"].includes(t.kind) && t.occurred_on >= p3 && t.occurred_on < b).map(t => ({ ...t, amount: Number(t.amount) }));
+  const cur = tx.filter(t => t.occurred_on >= a), prev = tx.filter(t => t.occurred_on < a);
+  const sum = (r, k) => round2(r.filter(t => t.kind === k).reduce((s, t) => s + t.amount, 0));
+  const inc = sum(cur, "entrata"), exp = sum(cur, "spesa"), saved = round2(inc - exp);
+  const mp = [...new Set(prev.map(t => t.occurred_on.slice(0, 7)))], n = mp.length || 1;
+  const avgExp = mp.length ? round2(sum(prev, "spesa") / n) : null;
+  const topOf = id => { const c = catById(id); return c && c.parent_id && catById(c.parent_id) ? catById(c.parent_id) : c; };
+  const byTop = rs => { const o = {}; rs.filter(t => t.kind === "spesa").forEach(t => { const c = topOf(t.category_id), k = c ? c.id : "none";
+    o[k] = o[k] || { name: c ? c.name : "Senza categoria", color: c ? c.color : "#94A099", amount: 0 }; o[k].amount = round2(o[k].amount + t.amount); }); return o; };
+  const nc = byTop(cur), pc = byTop(prev);
+  const cats = [...new Set([...Object.keys(nc), ...Object.keys(pc)])].map(k => { const e = { ...(nc[k] || { ...pc[k], amount: 0 }) };
+    e.avg = mp.length ? round2(((pc[k] || {}).amount || 0) / n) : null; e.diff = mp.length ? round2(e.amount - (e.avg || 0)) : null; return e; })
+    .sort((x, y) => y.amount - x.amount);
+  const moved = cats.filter(c => c.diff != null && Math.abs(c.diff) >= 20 && (!c.avg || Math.abs(c.diff) / c.avg >= 0.15));
+  const worse = moved.filter(c => c.diff > 0).sort((x, y) => y.diff - x.diff).slice(0, 3), better = moved.filter(c => c.diff < 0).sort((x, y) => x.diff - y.diff).slice(0, 3);
+  const md = monthData(month), bud = Object.entries(md.budgets).map(([k, v]) => ({ name: (catById(k) || {}).name || "?", budget: Number(v), spent: md.spentAll[k] || 0 }));
+  const over = bud.filter(x => x.spent > x.budget);
+  const goals = round2(rows("goal_moves").filter(m => m.occurred_on >= a && m.occurred_on < b).reduce((s, m) => s + Number(m.amount), 0));
+  const fund = fundAccount();
+  const workSpent = fund ? round2(rows("transactions").filter(t => t.kind === "trasferimento" && t.transfer_account_id === fund.id && t.occurred_on >= a && t.occurred_on < b).reduce((s, t) => s + Number(t.amount), 0)) : 0;
+  const E = v => eur(Math.abs(v)), name = MESI_DATI[+month.slice(5) - 1], hl = [];
+  if (inc || exp) hl.push(`A ${name} sono entrati ${E(inc)} e avete speso ${E(exp)}: ${saved >= 0 && inc ? `messo da parte ${E(saved)} (il ${Math.round(saved / inc * 100)}%)` : `${E(saved)} più delle entrate`}.`);
+  if (avgExp) { const d = exp - avgExp; hl.push(Math.abs(d) >= Math.max(30, avgExp * 0.05) ? `Avete speso ${E(d)} ${d > 0 ? "in più" : "in meno"} della media dei mesi precedenti.` : "Le spese sono in linea con la media dei mesi precedenti."); }
+  if (worse.length) hl.push(`Spese aumentate: ${worse.map(c => `${c.name} (+${E(c.diff)})`).join(", ")}.`);
+  if (better.length) hl.push(`Spese diminuite: ${better.map(c => `${c.name} (−${E(c.diff)})`).join(", ")}.`);
+  if (bud.length) hl.push(`Budget: ${over.length ? `${over.length} su ${bud.length} sforati (${over.map(x => x.name).join(", ")})` : "tutti rispettati 👏"}.`);
+  if (goals) hl.push(`Per gli obiettivi avete messo da parte ${E(goals)}.`);
+  if (workSpent) hl.push(`Spese di lavoro: ${E(workSpent)}, da segnare nella nota spese.`);
+  return { month, income: inc, expense: exp, saved, avg_expense: avgExp, categories: cats.slice(0, 8), worse, better, budgets: bud, over, goals, work_spent: workSpent, highlights: hl };
+}
+const MESI_DATI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+
+
+/* ---------- km dell'auto aziendale (stesse regole del Mac: api_km.py) ---------- */
+const KM_DEFAULTS = { da: "San Martino di Lupari", cars: [{ name: "Peugeot 308 SW", from: "2000-01-01" }], name: "ALBERTO GUIZZO" };
+function kmSettings() {
+  const r = DB.t.app_settings[DB.hh + "|km_settings"], s = JSON.parse(JSON.stringify(KM_DEFAULTS));
+  try { Object.assign(s, JSON.parse(r && r.value || "{}")); } catch (e) { }
+  return s;
+}
+function carOn(s, day) {
+  const cars = (s.cars || KM_DEFAULTS.cars).slice().sort((a, b) => a.from.localeCompare(b.from));
+  let name = cars[0].name; for (const c of cars) if (c.from <= day) name = c.name; return name;
+}
+const kmSplit = v => String(v || "").split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
+function kmRows() {
+  const rs = rows("work_km").map(r => ({ ...r, odometer: r.odometer == null ? null : Number(r.odometer), km: r.km == null ? null : Number(r.km) }))
+    .sort((a, b) => a.day.localeCompare(b.day) || (a.kind === "weekend") - (b.kind === "weekend"));
+  let last = null, lastWork = null;
+  for (const r of rs) {
+    r.day_km = null;
+    if (r.kind === "giorno") {
+      if (r.km != null) r.day_km = r.km; else if (r.odometer != null && last != null) r.day_km = round1(r.odometer - last);
+      if (r.odometer != null) last = lastWork = r.odometer;
+    } else { r.private_km = r.odometer != null && lastWork != null ? round1(r.odometer - lastWork) : null; if (r.odometer != null) last = r.odometer; }
+  }
+  return rs;
+}
+const round1 = n => Math.round(n * 10) / 10;
+async function saveKm(d) {
+  guard();
+  const kind = d.kind === "weekend" ? "weekend" : "giorno", day = d.day || todayIso();
+  const odo = d.odometer === "" || d.odometer == null ? null : parseAmount(d.odometer), km = d.km === "" || d.km == null ? null : parseAmount(d.km);
+  if (odo == null && km == null) throw new Error("Scrivi i km del contachilometri");
+  if ((odo != null && isNaN(odo)) || (km != null && isNaN(km))) throw new Error("Numero non valido");
+  const s = kmSettings(), id = await uuid5([DB.hh, "km", kind, day].join(":"));
+  const prev = kmRows().filter(r => r.odometer != null && (r.day < day || (r.day === day && kind === "weekend" && r.kind === "giorno"))).pop();
+  const row = { id, day, kind, odometer: odo, km, deleted_at: null };
+  if (kind === "giorno") Object.assign(row, { da: (d.da || s.da).trim(), a: [...new Set(kmSplit(d.a))].join(", ") || null,
+    car: (d.car || carOn(s, day)).trim(), clients: [...new Set(kmSplit(d.clients))].join(", ") || null, notes: (d.notes || "").trim() || null });
+  write("work_km", row);
+  return { warning: odo != null && prev && odo < prev.odometer ? `Il contachilometri è più basso dell'ultima lettura (${prev.odometer}): controlla il numero` : null };
+}
+function deleteKm(id) { guard(); write("work_km", { id, deleted_at: nowIso() }); }
+function kmWeek(monIso) {
+  const rs = kmRows(), by = {}; rs.forEach(r => by[r.day + "|" + r.kind] = r);
+  const first = rs.length ? rs[0].day : "9999";   // i giorni prima di cominciare non sono «mancanti»
+  const days = [0, 1, 2, 3, 4].map(i => { const d = addDays(monIso, i); return { day: d, entry: by[d + "|giorno"] || null, missing: !by[d + "|giorno"] && d <= todayIso() && d > first }; });
+  return { monday: monIso, days, weekend: by[addDays(monIso, 6) + "|weekend"] || null, km: round1(days.reduce((s, x) => s + ((x.entry || {}).day_km || 0), 0)) };
+}
+const mondayOf = iso => { const d = new Date(iso + "T12:00:00"); return addDays(iso, -((d.getDay() + 6) % 7)); };
+function kmSuggestions() {
+  const places = {}, clients = {};
+  for (const r of rows("work_km")) { kmSplit(r.a).forEach(p => places[p.toLowerCase()] = p); kmSplit(r.clients).forEach(c => clients[c.toLowerCase()] = c); }
+  const sort = o => Object.values(o).sort((a, b) => a.localeCompare(b, "it"));
+  return { places: sort(places), clients: sort(clients) };
 }

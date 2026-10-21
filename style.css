@@ -194,3 +194,16 @@ details summary { color: var(--accent); font-size: 13px; margin: 8px 0 4px; curs
 .lock-box img { width: 76px; height: 76px; border-radius: 18px; }
 .lock-box h1 { font-size: 24px; margin: 10px 0 2px; }
 .lock-box .btn.primary { margin-top: 22px; }
+.work-w { background: var(--panel); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; display: grid; gap: 8px; font-size: 15px; }
+.work-w label { display: flex; gap: 10px; align-items: center; }
+.work-w input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.work-w .sub { font-size: 13px; color: var(--muted); }
+.sum-w ul { margin: 8px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.55; }
+.sum-w { border-left: 5px solid var(--accent); }
+
+/* ---------- km ---------- */
+.km-w { border-left: 5px solid #6B5B95; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--panel); border: 1px solid var(--line2); border-radius: 14px; padding: 8px; margin-bottom: 14px; }
+.tags input { flex: 1; min-width: 140px; border: 0 !important; padding: 6px !important; background: transparent !important; }
+.tag { border: 0; background: var(--accent-bg); color: var(--accent); border-radius: 999px; padding: 6px 11px; font-size: 14px; font-weight: 500; }
+.km-day { cursor: pointer; }
