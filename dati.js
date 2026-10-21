@@ -753,15 +753,28 @@ async function shopSuggest() {
   }
   return n;
 }
-function addToList(name, qty) {
+const SHOP_KEYWORDS = [["Frutta e verdura", "mele pere banane arance limoni frutta verdura insalata pomodori patate cipolle carote zucchine melanzane peperoni aglio basilico prezzemolo funghi fragole kiwi uva pesche"], ["Pane e forno", "pane panini piadine grissini crackers fette biscottate focaccia pizza base"], ["Latte e formaggi", "latte yogurt burro formaggio mozzarella parmigiano grana ricotta stracchino panna uova"], ["Carne e pesce", "pollo tacchino manzo maiale macinato bistecca salsiccia pesce tonno fresco salmone merluzzo"], ["Salumi", "prosciutto salame mortadella bresaola speck wurstel"], ["Dispensa", "pasta riso farina zucchero sale olio aceto passata pelati sugo legumi ceci fagioli lenticchie tonno scatola maionese ketchup spezie dado"], ["Colazione", "caffè caffe tè te the cereali biscotti marmellata nutella miele cacao"], ["Surgelati", "surgelati gelato bastoncini piselli spinaci minestrone"], ["Bevande", "acqua succo bibita coca birra vino aranciata"], ["Casa e pulizia", "detersivo ammorbidente candeggina sgrassatore piatti pastiglie lavastoviglie spugne carta scottex sacchetti spazzatura alluminio pellicola"], ["Igiene persona", "shampoo bagnoschiuma sapone dentifricio spazzolino deodorante carta igienica assorbenti rasoi cotone crema"], ["Bambini", "pannolini salviette omogeneizzati merendine"], ["Animali", "crocchette scatolette lettiera"]];
+function guessDepartment(name) {
+  const t = " " + shopKey(name) + " "; let best = null;
+  for (const [dep, words] of SHOP_KEYWORDS) for (const w of words.split(" ")) if (t.includes(" " + w) && (!best || w.length > best[1])) best = [dep, w.length];
+  return best ? best[0] : "Altro";
+}
+async function addToList(name, qty) {
   guard();
-  const label = String(name || "").trim().replace(/\s+/g, " "); if (!label) throw new Error("Scrivi cosa comprare");
-  const prod = products().find(x => shopKey(x.name) === shopKey(label));
-  const exists = shopItems().find(i => !i.checked_at && (prod ? i.product_id === prod.id : !i.product_id && shopKey(i.name) === shopKey(label)));
+  let label = String(name || "").trim().replace(/\s+/g, " "); if (!label) throw new Error("Scrivi cosa comprare");
+  let prod = products().find(x => shopKey(x.name) === shopKey(label)), created = false;
+  if (!prod) {   // prodotto nuovo: entra anche nel catalogo (stesso id che userebbe il Mac)
+    label = label[0].toUpperCase() + label.slice(1);
+    const id = await uuid5([DB.hh, "prod", shopKey(label)].join(":"));
+    prod = write("shop_products", { id, name: label, department: guessDepartment(label), auto: 1,
+      sort_order: Math.max(0, ...rows("shop_products").map(x => x.sort_order || 0)) + 1, deleted_at: null });
+    created = true;
+  }
+  const exists = shopItems().find(i => !i.checked_at && i.product_id === prod.id);
   if (exists) return { exists: true, name: exists.name };
-  write("shop_list", { id: uuid4(), product_id: prod ? prod.id : null, name: prod ? prod.name : label, qty: (qty || "").trim() || null,
+  write("shop_list", { id: uuid4(), product_id: prod.id, name: prod.name, qty: (qty || "").trim() || null,
     source: "manuale", added_on: todayIso(), checked_at: null, purchase_id: null, deleted_at: null });
-  return { name: prod ? prod.name : label };
+  return { name: prod.name, created };
 }
 function checkItem(id, checked) {
   guard(); const it = DB.t.shop_list[id]; if (!it) return;

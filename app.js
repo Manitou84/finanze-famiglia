@@ -480,32 +480,65 @@ function viewSpesa() {
   const paused = shopParams().pause_on_trip && shopPaused();
   $("#view").innerHTML = `
     ${paused ? `<div class="card alert wait">Siete in vacanza (${esc(paused.name)}): i suggerimenti automatici sono in pausa.</div>` : ""}
-    ${canEdit() ? `<form class="shop-add" id="sa"><input type="text" id="sa-n" list="sa-l" placeholder="Aggiungi…" autocomplete="off" enterkeyhint="done">
-      <button class="btn primary" aria-label="Aggiungi">+</button><datalist id="sa-l">${products().map(p => `<option value="${esc(p.name)}">`).join("")}</datalist></form>` : ""}
+    ${canEdit() ? `<form class="shop-add" id="sa"><input type="text" id="sa-n" list="sa-l" placeholder="Scrivi un prodotto…" autocomplete="off" enterkeyhint="done">
+      <button class="btn primary" aria-label="Aggiungi">+</button><datalist id="sa-l">${products().map(p => `<option value="${esc(p.name)}">`).join("")}</datalist></form>
+      <button class="scan" id="sh-cat" style="margin-bottom:14px">Scegli dal catalogo (${products().length} prodotti)</button>` : ""}
     ${todo.length ? deps.map(d => `<div class="shop-dep">${esc(d)}</div><div class="card shop-card">${byDep[d].map(i => `<div class="shop-it" data-chk="${i.id}">
         <span class="box"></span><span class="n">${esc(i.name)}${i.qty ? ` <span class="muted">· ${esc(i.qty)}</span>` : ""}${i.source === "suggerito" ? ` <span class="badge wait">suggerito</span>` : ""}</span>
         ${canEdit() ? (i.source === "suggerito" ? `<button class="btn link" data-snz="${i.id}">Ne ho ancora</button>` : `<button class="btn link muted" data-rm="${i.id}" aria-label="Togli">✕</button>`) : ""}</div>`).join("")}</div>`).join("")
-      : `<div class="empty">${cart.length ? "Tutto nel carrello!" : "La lista è vuota."}${products().length ? "" : "<br>I prodotti del catalogo si creano dal Mac."}</div>`}
+      : cart.length ? `<div class="empty">Tutto nel carrello!</div>` : `<div class="card shop-help"><h2>Come funziona</h2><ol>
+        <li><b>Aggiungi</b> i prodotti dal catalogo qui sopra, oppure scrivili. Se un prodotto non c'è, lo metto nel catalogo per la volta dopo.</li>
+        <li><b>Al supermercato</b> tocca un prodotto quando lo metti nel carrello.</li>
+        <li><b>Alla cassa</b> tocca «Ho finito».</li>
+        <li>Dopo 3 acquisti imparo ogni quanto lo comprate e lo rimetto in lista da solo, con l'etichetta <span class="badge wait">suggerito</span>.</li></ol></div>`}
     ${cart.length ? `<div class="shop-dep">Nel carrello (${cart.length})</div><div class="card shop-card">${cart.map(i => `<div class="shop-it done" data-unchk="${i.id}">
         <span class="box"></span><span class="n">${esc(i.name)}</span></div>`).join("")}</div>
       ${canEdit() ? `<button class="btn primary wide" id="sh-done" style="margin-bottom:16px">Ho finito</button>` : ""}` : ""}
     ${soon.length ? `<div class="card"><h2>In arrivo</h2>${soon.map(({ p, left }) => `<div class="row"><span class="n">${esc(p.name)}<br>
       <span class="muted" style="font-size:12px">ogni ${st[p.id].interval} gg · ${left <= 0 ? "dovrebbe essere finito" : left === 1 ? "domani" : "tra " + left + " giorni"}</span></span>
       ${canEdit() ? `<button class="btn" data-now="${p.id}" style="padding:6px 14px">+</button>` : ""}</div>`).join("")}</div>` : ""}`;
-  if ($("#sa")) $("#sa").onsubmit = e => {
+  if ($("#sa")) $("#sa").onsubmit = async e => {
     e.preventDefault(); const v = $("#sa-n").value; if (!v.trim()) return;
-    try { const r = addToList(v); toast(r.exists ? `${r.name} è già in lista` : `${r.name} aggiunto`); viewSpesa(); $("#sa-n").focus(); } catch (err) { toast(err.message); }
+    try { const r = await addToList(v); toast(r.exists ? `${r.name} è già in lista` : r.created ? `${r.name} aggiunto (e messo nel catalogo)` : `${r.name} aggiunto`); viewSpesa(); $("#sa-n").focus(); }
+    catch (err) { toast(err.message); }
   };
+  if ($("#sh-cat")) $("#sh-cat").onclick = () => openShopCatalog();
   $$("[data-chk]").forEach(el => el.onclick = e => { if (e.target.closest("button") || !canEdit()) return; checkItem(el.dataset.chk, true); viewSpesa(); });
   $$("[data-unchk]").forEach(el => el.onclick = () => { if (!canEdit()) return; checkItem(el.dataset.unchk, false); viewSpesa(); });
   $$("[data-rm]").forEach(b => b.onclick = () => { removeItem(b.dataset.rm, false); viewSpesa(); });
   $$("[data-snz]").forEach(b => b.onclick = () => { const u = removeItem(b.dataset.snz, true); toast(u ? `Va bene, lo ripropongo dal ${shortDate(u)}` : "Tolto"); viewSpesa(); });
-  $$("[data-now]").forEach(b => b.onclick = () => { addToList(DB.t.shop_products[b.dataset.now].name); viewSpesa(); });
+  $$("[data-now]").forEach(b => b.onclick = async () => { await addToList(DB.t.shop_products[b.dataset.now].name); viewSpesa(); });
   if ($("#sh-done")) $("#sh-done").onclick = () => {
     const n = finishShopping(); viewSpesa();
     const cat = cats().find(c => c.name === "Spesa alimentare" && !c.deleted_at);
     if (confirm(`Spesa finita (${n} prodotti). Vuoi registrare anche l'importo?`)) openTx(null, { kind: "spesa", occurred_on: todayIso(), category_id: cat ? cat.id : null });
   };
+}
+
+function openShopCatalog() {
+  S.catQ = "";
+  const { sheet } = openSheet("Catalogo", `<input type="search" id="cq" placeholder="Cerca nel catalogo" autocomplete="off" style="margin-bottom:12px"><div id="cl"></div>
+    <p class="hint">Tocca un prodotto per metterlo in lista (o toglierlo). Prodotti, reparti e cadenze si modificano dal Mac.</p>`);
+  const draw = () => {
+    const q = shopKey(S.catQ), st = productStats();
+    const onList = new Set(shopItems().filter(i => !i.checked_at).map(i => i.product_id));
+    const list = products().filter(p => !q || shopKey(p.name).includes(q));
+    const byDep = {}; list.forEach(p => (byDep[p.department || "Altro"] = byDep[p.department || "Altro"] || []).push(p));
+    const deps = SHOP_DEPARTMENTS.filter(d => byDep[d]).concat(Object.keys(byDep).filter(d => !SHOP_DEPARTMENTS.includes(d)));
+    $("#cl", sheet).innerHTML = deps.map(d => `<div class="shop-dep">${esc(d)}</div><div class="card shop-card">${byDep[d].map(p => `<div class="shop-it ${onList.has(p.id) ? "picked" : ""}" data-cp="${p.id}">
+      <span class="box"></span><span class="n">${esc(p.name)}${st[p.id] && st[p.id].interval ? `<br><span class="muted" style="font-size:12px">ogni ${st[p.id].interval} gg</span>` : ""}</span>
+      ${onList.has(p.id) ? '<span class="badge ok">in lista</span>' : ""}</div>`).join("")}</div>`).join("")
+      || `<div class="empty">Nessun prodotto${q ? ` con «${esc(S.catQ)}»` : ""}.${q && canEdit() ? `<br><button class="btn primary" id="cadd" style="margin-top:12px">Aggiungi «${esc(S.catQ)}»</button>` : ""}</div>`;
+    $$("[data-cp]", sheet).forEach(el => el.onclick = async () => {
+      if (!canEdit()) return;
+      const it = shopItems().find(i => !i.checked_at && i.product_id === el.dataset.cp);
+      if (it) removeItem(it.id, false); else await addToList(DB.t.shop_products[el.dataset.cp].name);
+      draw();
+    });
+    if ($("#cadd", sheet)) $("#cadd", sheet).onclick = async () => { const r = await addToList(S.catQ); toast(`${r.name} aggiunto (e messo nel catalogo)`); S.catQ = ""; $("#cq", sheet).value = ""; draw(); };
+  };
+  $("#cq", sheet).oninput = () => { S.catQ = $("#cq", sheet).value; draw(); };
+  draw();
 }
 
 /* ==========================================================================
@@ -905,7 +938,9 @@ function viewAltro() {
       <li>Apri questa pagina con <b>Safari</b>${set.acc_app_url ? ` (${esc(set.acc_app_url)})` : ""}.</li>
       <li>Tocca <b>Condividi</b> (quadrato con la freccia) e poi <b>Aggiungi alla schermata Home</b>.</li>
       <li>Da lì si apre a schermo intero, come un'app.</li></ol></div></div>
+    <div class="card" id="lockcard"></div>
     <div class="card"><h2>Esci</h2><p class="hint">Scollega questo telefono. I dati restano su Supabase.</p><button class="btn danger" id="lo">Esci</button></div>`;
+  drawLockCard();
   $("#sn").onclick = async () => { await sync(); toast(syncError === "offline" ? "Sei offline" : syncError || "Dati aggiornati"); render(); };
   $("#ps").onclick = async () => {
     const a = $("#p1").value, b = $("#p2").value;
@@ -917,7 +952,78 @@ function viewAltro() {
   $("#lo").onclick = () => {
     const p = pendingCount();
     if (p && !confirm(`${p} modifiche non sono ancora state inviate: se esci le perdi. Uscire lo stesso?`)) return;
-    logout(); renderLogin();
+    logout(); saveLockCfg({ enabled: false }); renderLogin();
+  };
+}
+
+/* ==========================================================================
+   Blocco con Face ID (passkey del telefono: il volto lo controlla l'iPhone, l'app riceve solo «ok»)
+   ========================================================================== */
+const LOCK_KEY = "finanze-lock";
+function lockCfg() { try { return JSON.parse(localStorage.getItem(LOCK_KEY)) || { enabled: false }; } catch (e) { return { enabled: false }; } }
+function saveLockCfg(c) { try { localStorage.setItem(LOCK_KEY, JSON.stringify(c)); } catch (e) { } }
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+async function lockSupported() {
+  try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; }
+}
+async function enableLock(after) {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: "Finanze di Famiglia", id: location.hostname },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: DB.email || "famiglia", displayName: (DB.members[uid()] || DB.email || "Famiglia") + " · Finanze" },
+    pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+    timeout: 60000 } });
+  saveLockCfg({ enabled: true, credId: b64u(cred.rawId), after });
+}
+async function verifyLock() {
+  const c = lockCfg();
+  await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, timeout: 60000, userVerification: "required",
+    allowCredentials: c.credId ? [{ type: "public-key", id: unb64u(c.credId), transports: ["internal"] }] : [] } });
+}
+function showLock() {
+  if ($("#lock")) return;
+  document.body.insertAdjacentHTML("beforeend", `<div id="lock" class="lock"><div class="lock-box">
+    <img src="apple-touch-icon.png" alt=""><h1>Finanze di Famiglia</h1><p class="muted">Bloccata</p>
+    <button class="btn primary wide" id="lock-go">Sblocca con Face ID</button><p class="err" id="lock-err"></p>
+    <button class="btn link" id="lock-out" style="margin-top:20px">Non funziona? Esci e accedi con la password</button></div></div>`);
+  document.body.style.overflow = "hidden";
+  let busy = false;
+  const go = async auto => {
+    if (busy || !$("#lock")) return; busy = true; $("#lock-err").textContent = "";
+    try { await verifyLock(); $("#lock").remove(); document.body.style.overflow = $("#sheet") ? "hidden" : ""; }
+    catch (e) { if (!auto && $("#lock-err")) $("#lock-err").textContent = e.name === "NotAllowedError" ? "Annullato o non riconosciuto: tocca di nuovo «Sblocca»" : (e.message || "Non riuscito"); }
+    busy = false;
+  };
+  $("#lock-go").onclick = () => go(false);
+  $("#lock-out").onclick = () => {
+    const p = pendingCount();
+    if (!confirm(p ? `${p} modifiche non sono ancora state inviate: se esci le perdi. Uscire?` : "Uscire? Poi accedi di nuovo con email e password.")) return;
+    logout(); saveLockCfg({ enabled: false }); $("#lock").remove(); document.body.style.overflow = ""; renderLogin();
+  };
+  setTimeout(() => go(true), 350);   // prova subito; se l'iPhone vuole un tocco, c'è il bottone
+}
+async function drawLockCard() {
+  const box = $("#lockcard"); if (!box) return;
+  const ok = await lockSupported(), c = lockCfg();
+  if (!$("#lockcard")) return;
+  box.innerHTML = `<h2>Blocco con Face ID</h2>${ok ? `
+    <p class="hint">Quando apri l'app, o ci torni dopo un po', chiede il Face ID prima di mostrare i dati. Vale solo per questo telefono.</p>
+    <label class="f"><span>Chiedilo</span><select id="lk-after">${[[0, "Ogni volta che riapri l'app"], [5, "Dopo 5 minuti"], [15, "Dopo 15 minuti"], [60, "Dopo 1 ora"]]
+      .map(([v, l]) => `<option value="${v}" ${v === (c.after ?? 5) ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    ${c.enabled ? `<button class="btn" id="lk-save">Salva</button> <button class="btn danger" id="lk-off">Disattiva</button>` : `<button class="btn primary" id="lk-on">Attiva Face ID</button>`}
+    <p class="err" id="lk-err"></p>`
+    : `<p class="hint">Su questo telefono o browser non è disponibile. Serve un iPhone con Face ID o Touch ID e l'app aperta da Safari o dalla schermata Home.</p>`}`;
+  if ($("#lk-on")) $("#lk-on").onclick = async () => {
+    try { await enableLock(+$("#lk-after").value); toast("Face ID attivo"); drawLockCard(); }
+    catch (e) { $("#lk-err").textContent = e.name === "NotAllowedError" ? "Annullato" : (e.message || "Non riuscito"); }
+  };
+  if ($("#lk-save")) $("#lk-save").onclick = () => { saveLockCfg(Object.assign(lockCfg(), { after: +$("#lk-after").value })); toast("Salvato"); };
+  if ($("#lk-off")) $("#lk-off").onclick = async () => {
+    try { await verifyLock(); saveLockCfg({ enabled: false }); toast("Face ID disattivato"); drawLockCard(); }
+    catch (e) { $("#lk-err").textContent = "Per disattivarlo serve il Face ID"; }
   };
 }
 
@@ -931,10 +1037,19 @@ async function start() {
     if (link) { await enterHousehold(); toast("Benvenuto!"); }
   } catch (e) { return renderLogin("", e.message); }
   if (!DB.session || !DB.hh) return renderLogin();
+  if (lockCfg().enabled) showLock();
   renderShell();
   sync().then(render);
 }
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && DB.session) sync().then(() => !$("#sheet") && render()); });
+document.addEventListener("visibilitychange", () => {
+  const c = lockCfg();
+  if (document.visibilityState === "hidden") { try { localStorage.setItem("finanze-hidden-at", String(Date.now())); } catch (e) { } return; }
+  if (DB.session && c.enabled && !$("#lock")) {
+    let at = 0; try { at = +localStorage.getItem("finanze-hidden-at") || 0; } catch (e) { }
+    if (!c.after || Date.now() - at > c.after * 60000) showLock();
+  }
+  if (DB.session) sync().then(() => !$("#sheet") && render());
+});
 window.addEventListener("online", () => DB.session && sync().then(() => !$("#sheet") && render()));
 setInterval(() => { if (document.visibilityState === "visible" && DB.session && !$("#sheet")) sync().then(render); }, 120000);
 setInterval(() => { if (S.view === "spesa" && document.visibilityState === "visible" && DB.session && !$("#sheet") && navigator.onLine) sync().then(() => S.view === "spesa" && !$("#sheet") && render()); }, 15000);

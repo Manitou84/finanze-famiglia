@@ -184,3 +184,13 @@ label.f > span { display: block; font-size: 13px; color: var(--muted); margin: 0
 .goal-w { cursor: pointer; margin-bottom: 14px; }
 details summary { color: var(--accent); font-size: 13px; margin: 8px 0 4px; cursor: pointer; }
 .acc-w { cursor: pointer; }
+.shop-it.picked .box { background: var(--accent); border-color: var(--accent); }
+.shop-it.picked .box::after { content: ""; width: 6px; height: 11px; border: solid var(--panel); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg) translate(-1px, -1px); }
+.shop-help ol { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.5; } .shop-help li { margin-bottom: 6px; }
+
+/* ---------- blocco ---------- */
+.lock { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: grid; place-items: center; padding: 24px; }
+.lock-box { text-align: center; width: 100%; max-width: 320px; }
+.lock-box img { width: 76px; height: 76px; border-radius: 18px; }
+.lock-box h1 { font-size: 24px; margin: 10px 0 2px; }
+.lock-box .btn.primary { margin-top: 22px; }
