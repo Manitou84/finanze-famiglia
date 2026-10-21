@@ -396,23 +396,38 @@ const CAR_WORDS = ["eni ", "enilive", "q8", "tamoil", "esso", "agip", "api-ip", 
   "carrozzeria", "ricambi", "lavaggio", "pneumatic", "meccanic", "elettrauto", "autostrade", "pedaggio", "parcheggio",
   "easypark", "parking", "bollo auto"];
 const activeVehicles = () => rows("vehicles").filter(v => v.status === "attiva").sort((a, b) => a.sort_order - b.sort_order);
+const STOP_WORDS = ["assicurazioni", "assicurazione", "italia", "spa", "srl", "group", "gruppo", "compagnia", "di", "the"];
+function companyHit(company, t) {
+  if (!company) return false;
+  const c = norm(company).trim(); if (c && t.includes(c)) return true;
+  return c.split(" ").filter(w => w.length >= 4 && !STOP_WORDS.includes(w)).some(w => t.includes(" " + w)) &&
+    ["assicuraz", "polizz", "rca", "rc auto", "premio", "rata"].some(k => t.includes(k));
+}
+function vehicleRule(t, vehicles) {
+  let rules = {}; try { rules = JSON.parse((DB.t.app_settings[DB.hh + "|vehicle_rules"] || {}).value || "{}"); } catch (e) { }
+  const ids = new Set(vehicles.map(v => v.id));
+  const hits = Object.keys(rules).filter(p => t.includes(p) && ids.has(rules[p])).sort((a, b) => b.length - a.length);
+  return hits.length ? rules[hits[0]] : null;
+}
 function isCarExpense(tx, vehicles) {
   if (tx.kind !== "spesa") return false;
   const t = norm(tx.description);
   if (t.includes("imposta di bollo") || PUBLIC.some(w => t.includes(w)) || t.includes("telepass")) return false;
-  if (vehicles.some(v => v.insurance_company && t.includes(norm(v.insurance_company).trim()))) return true;
+  if (vehicles.some(v => companyHit(v.insurance_company, t)) || vehicleRule(t, vehicles)) return true;
   if (t.includes("bollo auto") || t.includes("tassa automobilistica")) return true;
   const c = catById(tx.category_id);
   if (!c) return CAR_WORDS.some(w => t.includes(w));
   const p = c.parent_id && catById(c.parent_id);
-  return [c.name, p && p.name].some(n => (n || "").toLowerCase() === "auto e trasporti");
+  const names = [c.name, p && p.name].map(n => norm(n || ""));
+  return names.some(n => n.trim() === "auto e trasporti") || ["carburant", "benzin", "gasolio", "rifornim", "manutenz", "officina", "pedagg", "parchegg", "autostrad", "bollo"].some(w => names.some(n => n.includes(w)));
 }
 function autoVehicle(tx) {
   const vs = activeVehicles();
   if (!vs.length || !isCarExpense(tx, vs)) return null;
+  const t = norm(tx.description), ruled = vehicleRule(t, vs);
+  if (ruled) return ruled;
   if (vs.length === 1) return vs[0].id;
-  const t = norm(tx.description);
-  const hits = vs.filter(v => v.insurance_company && t.includes(norm(v.insurance_company).trim()));
+  const hits = vs.filter(v => companyHit(v.insurance_company, t));
   return hits.length === 1 ? hits[0].id : null;
 }
 function autoDeadlines() {
@@ -897,7 +912,7 @@ function deleteGoalMove(id) { guard(); write("goal_moves", { id, deleted_at: now
 /* ---------- previsione di fine mese (stesse regole del Mac: api_previsione.py) ---------- */
 const LIQUID = ["conto", "carta", "contanti"];
 const CAR_TYPES = [
-  ["Carburante", ["eni ", "enilive", "q8", "tamoil", "esso", "agip", "api-ip", "ip ", "carburant", "benzina", "gasolio", "distributore", "gpl", "metano", "self service", "ricarica auto", "fuel", "stazione"]],
+  ["Carburante", ["eni ", "enilive", "q8", "tamoil", "esso", "agip", "api-ip", "ip ", "carburant", "benzina", "gasolio", "distributore", "gpl", "metano", "self service", "ricarica auto", "fuel", "stazione", "shell", "repsol", "totalerg", "totalenergies", "erg ", "kuwait", "beyfin", "petrol", "rifornim", "carbur"]],
   ["Manutenzione", ["officina", "gommista", "tagliando", "revisione", "carrozzeria", "ricambi", "lavaggio", "norauto", "midas", "pneumatic", "meccanic", "elettrauto"]],
   ["Assicurazione", ["assicuraz", "polizz", "rca", "unipol", "allianz", "axa", "zurich", "genertel", "linear", "prima.it", "verti", "conte.it"]],
   ["Bollo", ["bollo auto", "tassa automobilistica", "bollo "]],
@@ -934,7 +949,7 @@ function forecast() {
   const vtx = tx.filter(t => t.vehicle_id && t.kind === "spesa").sort((a, b) => b.occurred_on.localeCompare(a.occurred_on));
   const carEvents = [];
   for (const v of activeVehicles()) for (const [f, label, kind, words] of [["bollo_due", "Bollo", "Bollo", ["bollo"]], ["insurance_due", "Assicurazione", "Assicurazione", ["assicuraz", "rc auto", "rca", "polizza"]], ["revision_due", "Revisione", "Manutenzione", ["revisione"]]]) {
-    if (!v[f]) continue;
+    if (!v[f] || (f === "insurance_due" && (+v.insurance_months || 12) < 6)) continue;   // a rate: già nelle spese di ogni mese
     const w2 = f === "insurance_due" && v.insurance_company ? words.concat([v.insurance_company.toLowerCase()]) : words;
     if (covered(w2)) continue;
     const last = vtx.find(t => t.vehicle_id === v.id && expenseType(t.description) === kind && (f !== "revision_due" || (t.description || "").toLowerCase().includes("revision")));
