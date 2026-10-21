@@ -30,7 +30,7 @@ const TABLES = {
   goal_moves: ["id", "household_id", "goal_id", "amount", "occurred_on", "note", "version", "updated_at", "updated_by", "deleted_at"],
   work_km: ["id", "household_id", "day", "kind", "odometer", "km", "da", "a", "car", "clients", "notes", "version", "updated_at", "updated_by", "deleted_at"],
   transactions: ["id", "household_id", "account_id", "category_id", "kind", "amount", "occurred_on", "description",
-    "transfer_account_id", "created_by", "recurring_id", "external_id", "vehicle_id", "person_id", "version", "updated_at", "updated_by", "deleted_at"],
+    "transfer_account_id", "created_by", "recurring_id", "external_id", "vehicle_id", "person_id", "person_ids", "version", "updated_at", "updated_by", "deleted_at"],
   budgets: ["id", "household_id", "category_id", "month", "amount", "version", "updated_at", "updated_by", "deleted_at"],
   app_settings: ["household_id", "key", "value", "version", "updated_at", "updated_by"],
 };
@@ -265,8 +265,10 @@ async function saveTransaction(d) {
   if (!d.id && !row.recurring_id) row.recurring_id = autoLink(row);
   if ("vehicle_id" in d) row.vehicle_id = d.vehicle_id || null;
   else if (!d.id) row.vehicle_id = autoVehicle(row);
-  if ("person_id" in d) { row.person_id = d.person_id || null; if (row.description && (d.person_id || d.id)) learnPerson(row.description, row.person_id); }
-  else if (!d.id) row.person_id = autoPerson(row);
+  if ("person_ids" in d || "person_id" in d) {
+    const ids = peopleList("person_ids" in d ? d.person_ids : d.person_id); Object.assign(row, peopleFields(ids));
+    if (row.description && (ids.length || d.id)) learnPerson(row.description, ids);
+  } else if (!d.id) Object.assign(row, peopleFields(autoPerson(row)));
   const fund = fundAccount();
   if (d.work && fund && ["spesa", "entrata"].includes(d.kind)) {
     applyWork(row, fund.id);
@@ -333,7 +335,7 @@ function learnWork(description, kind, on) {
 function applyWork(row, fundId) {
   if (row.kind === "spesa") Object.assign(row, { kind: "trasferimento", transfer_account_id: fundId });
   else if (row.kind === "entrata") { const acc = row.account_id; Object.assign(row, { kind: "trasferimento", account_id: fundId, transfer_account_id: acc }); }
-  return Object.assign(row, { category_id: null, recurring_id: null, vehicle_id: null, person_id: null });
+  return Object.assign(row, { category_id: null, recurring_id: null, vehicle_id: null, person_id: null, person_ids: null });
 }
 
 /* ---------- ricorrenti (stesse regole del Mac) ---------- */
@@ -427,6 +429,10 @@ function autoDeadlines() {
 
 /* ---------- famiglia: persone, documenti, visite, paghetta, ISEE e 730 (stesse regole del Mac) ---------- */
 const PERSON_RULES = "person_rules";
+// una spesa può essere per più persone: person_ids «id1,id2», person_id la prima (stesse regole del Mac)
+const peopleList = v => [...new Set((Array.isArray(v) ? v : String(v || "").split(",")).map(x => String(x || "").trim()).filter(Boolean))];
+const txPeople = t => peopleList(t.person_ids).length ? peopleList(t.person_ids) : t.person_id ? [t.person_id] : [];
+const peopleFields = ids => { ids = peopleList(ids); return { person_id: ids[0] || null, person_ids: ids.length > 1 ? ids.join(",") : null }; };
 const PEOPLE_PALETTE = ["#2E5E4E", "#9A3F5C", "#E3A73A", "#2F5F8A", "#7F77DD", "#D85A30"];
 const DEDUCT = [
   ["Spese sanitarie", ["farmacia", "parafarmacia", "medico", "dentist", "odontoiatr", "ottica", "ospedale", "ticket",
@@ -457,12 +463,12 @@ function personRules() {
 function autoPerson(tx) {
   const rules = personRules(), t = norm(tx.description);
   const hits = Object.keys(rules).filter(p => t.includes(p)).sort((a, b) => b.length - a.length);
-  return hits.length && personById(rules[hits[0]]) ? rules[hits[0]] : null;
+  return hits.length ? peopleList(rules[hits[0]]).filter(id => personById(id)) : [];
 }
 function learnPerson(description, personId) {
   const p = learnPattern(String(description || "").split(" · ")[0]); if (!p) return;
-  const rules = personRules();
-  if (personId) { if (rules[p] === personId) return; rules[p] = personId; }
+  const rules = personRules(), v = peopleList(personId).join(",");
+  if (v) { if (rules[p] === v) return; rules[p] = v; }
   else if (p in rules) delete rules[p]; else return;
   write("app_settings", { key: PERSON_RULES, value: JSON.stringify(rules) });
 }
@@ -480,18 +486,19 @@ function savePerson(d) {
 }
 function deletePerson(id) {
   guard();
-  for (const t of rows("transactions")) if (t.person_id === id) write("transactions", { id: t.id, person_id: null });
+  for (const t of rows("transactions")) if (txPeople(t).includes(id)) write("transactions", { id: t.id, ...peopleFields(txPeople(t).filter(x => x !== id)) });
   for (const tbl of ["person_items", "allowance"]) for (const r of rows(tbl)) if (r.person_id === id) write(tbl, { id: r.id, deleted_at: nowIso() });
   write("people", { id, deleted_at: nowIso() });
 }
 function setTxPerson(txId, personId) {
   guard(); const t = DB.t.transactions[txId];
-  write("transactions", { id: txId, person_id: personId || null });
+  const ids = peopleList(personId);
+  write("transactions", { id: txId, ...peopleFields(ids) });
   if (!t || !t.description) return 1;
-  learnPerson(t.description, personId);
+  learnPerson(t.description, ids);
   let n = 1; const pat = learnPattern(String(t.description).split(" · ")[0]);   // anche le altre spese uguali ancora senza persona
-  if (personId && pat) for (const o of rows("transactions"))
-    if (o.id !== txId && o.kind === "spesa" && !o.person_id && learnPattern(String(o.description || "").split(" · ")[0]) === pat) { write("transactions", { id: o.id, person_id: personId }); n++; }
+  if (ids.length && pat) for (const o of rows("transactions"))
+    if (o.id !== txId && o.kind === "spesa" && !o.person_id && learnPattern(String(o.description || "").split(" · ")[0]) === pat) { write("transactions", { id: o.id, ...peopleFields(ids) }); n++; }
   return n;
 }
 function savePersonItem(d) {
@@ -566,7 +573,7 @@ function peopleView(year) {
   const allow = rows("allowance").sort((a, b) => b.occurred_on.localeCompare(a.occurred_on) || String(b.updated_at).localeCompare(String(a.updated_at)));
   const r2 = v => Math.round(v * 100) / 100;
   const ppl = people().map(p => {
-    const mine = txs.filter(t => t.person_id === p.id), byCat = {}, ded = {};
+    const mine = txs.filter(t => txPeople(t).includes(p.id)).map(t => Object.assign({}, t, { amount: r2(t.amount / txPeople(t).length), shared: txPeople(t).length })), byCat = {}, ded = {};
     for (const t of mine) {
       const c = catById(t.category_id), k = c ? c.name : "Senza categoria"; byCat[k] = r2((byCat[k] || 0) + t.amount);
       if (t.deduct) ded[t.deduct] = r2((ded[t.deduct] || 0) + t.amount);
@@ -588,7 +595,7 @@ function peopleView(year) {
   const totals = {};
   for (const t of txs) if (t.deduct) totals[t.deduct] = r2((totals[t.deduct] || 0) + t.amount);
   return { year: Number(year), people: ppl, deadlines: familyDeadlines(), deduct_totals: totals, yearly_docs: yearlyDocs(),
-    deduct_unassigned: txs.filter(t => t.deduct && !t.person_id).slice(0, 100), deduct_types: DEDUCT.map(d => d[0]) };
+    deduct_unassigned: txs.filter(t => t.deduct && !txPeople(t).length).slice(0, 100), deduct_types: DEDUCT.map(d => d[0]) };
 }
 function export730Csv(year) {
   const names = Object.fromEntries(people().map(p => [p.id, p.name]));
@@ -597,8 +604,9 @@ function export730Csv(year) {
   for (const t of rows("transactions").filter(t => t.kind === "spesa" && t.occurred_on.startsWith(year + "-")).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on))) {
     const k = deductionType(t.description, t.category_id); if (!k) continue;
     const d = t.occurred_on;
-    lines.push([`${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`, names[t.person_id] || "da indicare", k, t.description || "",
-      Number(t.amount).toFixed(2).replace(".", ","), acc(t.account_id)]);
+    const ppl = txPeople(t).length ? txPeople(t) : [null];
+    for (const pid of ppl) lines.push([`${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`, names[pid] || "da indicare", k,
+      (t.description || "") + (ppl.length > 1 ? ` (quota di ${ppl.length})` : ""), (Number(t.amount) / ppl.length).toFixed(2).replace(".", ","), acc(t.account_id)]);
   }
   return { count: lines.length - 1, text: "﻿" + lines.map(r => r.map(v => /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v).join(";")).join("\r\n") };
 }

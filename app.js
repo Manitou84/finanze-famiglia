@@ -511,15 +511,16 @@ function openTx(t, preset) {
     if (id) { cat = id; $("#xs").textContent = "Categoria proposta in automatico: " + catLabel(id); drawCats(); }
   };
   const tripNow = edit ? (tripMap()[x.id] || "") : "auto";
-  let per = x.person_id || null, perTouched = edit;
+  let per = txPeople(x), perTouched = edit;
   const drawPer = () => {
     if (!$("#xper")) return;
     if (kind !== "spesa") { $("#xper").innerHTML = ""; return; }
-    $("#xper").innerHTML = `<label class="f" style="margin-bottom:4px"><span>Per chi (facoltativo)</span></label>
-      <div class="chips">${people().map(p => `<button data-per="${p.id}" class="${p.id === per ? "on" : ""}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</button>`).join("")}</div>`;
-    $$("#xper [data-per]").forEach(b => b.onclick = () => { per = per === b.dataset.per ? null : b.dataset.per; perTouched = true; drawPer(); });
+    $("#xper").innerHTML = `<label class="f" style="margin-bottom:4px"><span>Per chi (facoltativo${people().length > 1 ? ", anche più persone" : ""})</span></label>
+      <div class="chips">${people().map(p => `<button data-per="${p.id}" class="${per.includes(p.id) ? "on" : ""}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</button>`).join("")}</div>
+      ${per.length > 1 ? `<p class="hint" style="margin:-2px 0 10px">Divisa in parti uguali tra ${per.length} persone.</p>` : ""}`;
+    $$("#xper [data-per]").forEach(b => b.onclick = () => { const id = b.dataset.per; per = per.includes(id) ? per.filter(x => x !== id) : per.concat(id); perTouched = true; drawPer(); });
   };
-  const suggestPer = () => { if (perTouched || kind !== "spesa") return; const p = autoPerson({ description: $("#xd").value }); if (p !== per) { per = p; drawPer(); } };
+  const suggestPer = () => { if (perTouched || kind !== "spesa") return; const p = autoPerson({ description: $("#xd").value }); if (p.join() !== per.join()) { per = p; drawPer(); } };
   const setKind = k => {
     kind = k; $$("#xk button").forEach(b => b.classList.toggle("on", b.dataset.k === k));
     $("#xto-w").style.display = k === "trasferimento" ? "" : "none";
@@ -574,8 +575,8 @@ function openTx(t, preset) {
     try {
       const r = await saveTransaction({ id: x.id, kind, amount: $("#xa").value, occurred_on: $("#xdt").value, account_id: $("#xacc").value,
         category_id: cat, transfer_account_id: kind === "trasferimento" ? $("#xto").value : null, description: $("#xd").value,
-        ...(kind === "spesa" && (perTouched && (edit ? per !== (x.person_id || null) : per)) ? { person_id: per } : {}),
-        ...(edit && kind !== "spesa" && x.person_id ? { person_id: null } : {}),
+        ...(kind === "spesa" && (perTouched && (edit ? per.join() !== txPeople(x).join() : per.length)) ? { person_ids: per } : {}),
+        ...(edit && kind !== "spesa" && x.person_id ? { person_ids: [] } : {}),
         ...($("#xwork") && kind !== "trasferimento" ? { work, work_remember: $("#xworkr").checked } : {}),
         ...(x.recurring_id !== undefined && edit ? { recurring_id: x.recurring_id } : {}), ...(preset && preset.recurring_id ? { recurring_id: preset.recurring_id } : {}) });
       if (!work && $("#xtrip") && $("#xtrip").value !== tripNow && $("#xtrip").value !== "auto") setTxTrip(r.id, $("#xtrip").value || null);
@@ -894,7 +895,8 @@ function famFisco() {
       ${v.deduct_unassigned.slice(0, 25).map(t => `<div style="padding:10px 0;border-bottom:1px solid var(--line)">
         <div class="row" style="padding:0;border:0"><span class="muted num" style="width:50px">${shortDate(t.occurred_on)}</span><span class="n">${esc(t.description || catLabel(t.category_id) || "Spesa")}<br>
           <span class="muted" style="font-size:12px">${esc(t.deduct)}</span></span><b class="num">${eur(t.amount)}</b></div>
-        ${canEdit() ? `<div class="chips mini" style="margin:8px 0 0">${ppl.map(p => `<button data-as="${t.id}" data-p="${p.id}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</button>`).join("")}</div>` : ""}</div>`).join("")}</div>` : ""}`;
+        ${canEdit() ? `<div class="chips mini" style="margin:8px 0 0">${ppl.map(p => `<button data-as="${t.id}" data-p="${p.id}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</button>`).join("")}
+          ${ppl.filter(p => p.role === "figlio").length > 1 ? `<button data-as="${t.id}" data-p="${ppl.filter(p => p.role === "figlio").map(p => p.id).join(",")}">Tutti i figli</button>` : ""}</div>` : ""}</div>`).join("")}</div>` : ""}`;
   $$("#fy button").forEach(b => b.onclick = () => { S.famYear = +b.dataset.y; famFisco(); });
   $$(".yd-w").forEach(el => el.onclick = () => openYearlyW(DB.t.yearly_docs[el.dataset.id]));
   $$("[data-yd]").forEach(b => b.onclick = () => openYearlyW({ kind: b.dataset.yd }));
