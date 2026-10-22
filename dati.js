@@ -1076,6 +1076,21 @@ async function saveKm(d) {
   return { warning: odo != null && prev && odo < prev.odometer ? `Il contachilometri è più basso dell'ultima lettura (${prev.odometer}): controlla il numero` : null };
 }
 function deleteKm(id) { guard(); write("work_km", { id, deleted_at: nowIso() }); }
+/* carburante pagato con la carta aziendale: va nella riga «Carburante card aziendale» della nota spese (Mac: api_km.py) */
+function fuelList() {
+  const r = DB.t.app_settings[DB.hh + "|fuel_card"];
+  try { return (JSON.parse(r && r.value || "[]") || []).filter(x => x && x.day && x.amount != null).map(x => ({ ...x, amount: Number(x.amount) })); } catch (e) { return []; }
+}
+function saveFuel(d) {
+  guard();
+  const amount = parseAmount(d.amount), day = d.day || todayIso();
+  if (amount == null || isNaN(amount) || amount <= 0) throw new Error("Scrivi l'importo del rifornimento");
+  const items = fuelList().filter(x => x.id !== d.id), id = d.id || uuid4();
+  items.push({ id, day, amount: round2(amount) }); items.sort((a, b) => a.day.localeCompare(b.day));
+  write("app_settings", { key: "fuel_card", value: JSON.stringify(items) });
+  return id;
+}
+function deleteFuel(id) { guard(); write("app_settings", { key: "fuel_card", value: JSON.stringify(fuelList().filter(x => x.id !== id)) }); }
 function kmWeek(monIso) {
   const rs = kmRows(), by = {}; rs.forEach(r => by[r.day + "|" + r.kind] = r);
   const first = rs.length ? rs[0].day : "9999";   // i giorni prima di cominciare non sono «mancanti»
