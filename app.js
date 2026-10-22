@@ -425,6 +425,39 @@ function openFuel(f, back) {
     f ? { del: { label: "Elimina", confirm: "Eliminare questo rifornimento?", run: () => { deleteFuel(f.id); if (back) setTimeout(back, 50); return "Eliminato"; } } } : {});
   if (!f) setTimeout(() => $("#fu-a", sheet).focus(), 250);
 }
+function openNotaSpese(month) {
+  const cur = todayIso().slice(0, 7), months = [0, 1, 2].map(i => shiftMonth(cur, -i));
+  if (!months.includes(month)) month = cur;
+  const canShareFiles = !!(navigator.canShare && window.File && navigator.canShare({ files: [new File([""], "x.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })] }));
+  const info = m => { const d = notaSpeseData(m), fuel = fuelList().filter(f => f.day.slice(0, 7) === m).reduce((a, f) => a + f.amount, 0);
+    return `<div class="pw-stats"><div><span>Settimane</span><b class="num">${d.sheets.map(x => x[0]).join(", ") || "—"}</b></div>
+      <div><span>Km di lavoro</span><b class="num">${fmtKm(d.totalKm)}</b></div><div><span>Carburante carta</span><b class="num">${eur(fuel)}</b></div></div>
+      ${d.missing.length ? `<p class="out" style="font-size:13px;margin:10px 0 0">Mancano i km di ${d.missing.length} ${d.missing.length === 1 ? "giorno" : "giorni"}: ${d.missing.map(x => shortDate(x)).join(", ")}</p>` : ""}`; };
+  const { sheet } = openSheet("Nota spese Excel", `
+    <label class="f"><span>Mese</span><select id="ns-m">${months.map(m => `<option value="${m}" ${m === month ? "selected" : ""}>${monthName(m).replace(/^./, c => c.toUpperCase())}</option>`).join("")}</select></label>
+    <div class="card" id="ns-info">${info(month)}</div>
+    <p class="hint">Lo stesso file che crea il Mac: un foglio per settimana con km, paesi, clienti, spese del Fondo lavoro e carburante della carta aziendale.
+      ${canShareFiles ? "Tocca «Invia per email», scegli <b>Mail</b> e scrivi il tuo indirizzo aziendale: il file è già allegato." : ""}</p>
+    ${!nsTemplate() ? `<p class="err">Manca il modello: apri il programma sul Mac e vai in «Km e nota spese», poi riprova qui dopo la sincronizzazione.</p>` : ""}
+    <button class="btn primary wide" id="ns-send">${canShareFiles ? "Invia per email" : "Scarica il file"}</button>
+    ${canShareFiles ? `<button class="btn wide" id="ns-dl" style="margin-top:8px">Salva in File</button>` : ""}`);
+  // il file si prepara subito: Safari apre la condivisione solo se parte direttamente dal tocco, senza attese
+  let ready = null, gen = 0;
+  const prepare = () => { const my = ++gen, m = $("#ns-m", sheet).value; ready = null; $("#se", sheet).textContent = "";
+    $$("#ns-send, #ns-dl", sheet).forEach(b => { b.disabled = true; b.dataset.l = b.dataset.l || b.textContent; b.textContent = "Preparo il file…"; });
+    buildNotaSpese(m).then(r => { if (my === gen) ready = r; }).catch(e => { if (my === gen) $("#se", sheet).textContent = e.message; })
+      .finally(() => { if (my === gen) $$("#ns-send, #ns-dl", sheet).forEach(b => { b.disabled = !ready; b.textContent = b.dataset.l; }); }); };
+  $("#ns-m", sheet).onchange = () => { $("#ns-info", sheet).innerHTML = info($("#ns-m", sheet).value); prepare(); };
+  const download = r => { const a = document.createElement("a"); a.href = URL.createObjectURL(r.blob); a.download = r.fileName;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); };
+  $("#ns-send", sheet).onclick = () => { const r = ready; if (!r) return;
+    if (!canShareFiles) return download(r);
+    const f = new File([r.blob], r.fileName, { type: r.blob.type });
+    navigator.share({ files: [f], title: r.fileName, text: `Nota spese ${monthName($("#ns-m", sheet).value)} – ${r.name}` })
+      .catch(err => { if (err.name !== "AbortError") $("#se", sheet).textContent = "Non riesco ad aprire la condivisione: " + err.message; }); };
+  if ($("#ns-dl", sheet)) $("#ns-dl", sheet).onclick = () => ready && download(ready);
+  if (nsTemplate()) prepare(); else $$("#ns-send, #ns-dl", sheet).forEach(b => b.disabled = true);
+}
 function openKmWeek(mon) {
   const w = kmWeek(mon), sun = addDays(mon, 6), fuel = fuelList().filter(f => f.day >= mon && f.day <= sun);
   const { sheet } = openSheet(`Settimana ${shortDate(mon)} – ${shortDate(sun)}`, `
@@ -440,8 +473,9 @@ function openKmWeek(mon) {
     ${fuel.length || canEdit() ? `<div class="card"><h2>⛽ Carburante carta aziendale</h2>${fuel.map(f => `<div class="row fu-it" data-fu="${f.id}"><span class="n">${dayLabel(f.day)}</span>
       <b class="num">${eur(f.amount)}</b><span class="muted" style="margin-left:6px">›</span></div>`).join("") || `<p class="muted" style="margin:0">Nessun rifornimento questa settimana.</p>`}
       ${canEdit() ? `<button class="btn link" id="kw-fuel" style="margin-top:6px">+ Aggiungi rifornimento</button>` : ""}</div>` : ""}
-    <p class="hint">Il report del mese e il file Excel per l'azienda si scaricano dal Mac (Soldi › Km e nota spese).</p>`);
+    <button class="btn primary wide" id="kw-xls" style="margin-top:4px">📎 Nota spese Excel</button>`);
   $$(".km-day", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); el.dataset.we ? openKm("weekend", sun) : openKm("giorno", el.dataset.d); });
+  $("#kw-xls", sheet).onclick = () => { sheet.remove(); openNotaSpese(addDays(mon, 3).slice(0, 7)); };
   const back = () => openKmWeek(mon);
   $$(".fu-it", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); openFuel(fuel.find(f => f.id === el.dataset.fu), back); });
   if ($("#kw-fuel", sheet)) $("#kw-fuel", sheet).onclick = () => { sheet.remove(); openFuel(null, back); };

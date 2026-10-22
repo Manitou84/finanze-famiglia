@@ -1104,3 +1104,108 @@ function kmSuggestions() {
   const sort = o => Object.values(o).sort((a, b) => a.localeCompare(b, "it"));
   return { places: sort(places), clients: sort(clients) };
 }
+
+/* ---------- nota spese in Excel creata sul telefono (stesse regole del Mac: api_km.py km_export) ----------
+   Il modello arriva dal Mac attraverso il database della famiglia (app_settings «km_template»): non sta su GitHub
+   perché contiene i dati dell'azienda. Lo zip si legge e scrive con JSZip, caricato solo quando serve. */
+const NS_DAY_COLS = ["C", "E", "G", "I", "K", "M", "O"], NS_KM_ROWS = [26, 28, 30, 32, 34], NS_FUEL_ROW = 14;
+const NS_EXPENSE_ROWS = [
+  [9, ["ryanair", "easyjet", "ita airways", "alitalia", "vueling", "lufthansa", "volo", "voli", "wizz"]],
+  [10, ["autostrade", "telepass", "pedaggio", "unipolmove"]],
+  [11, ["parcheggio", "parking", "easypark", "sosta", "garage"]],
+  [12, ["trenitalia", "italo", "treno", "taxi", "uber", "freenow", "metro", "atm ", "bus", "actv", "noleggio"]],
+  [13, ["carburant", "benzina", "gasolio", "eni ", "q8", "tamoil", "esso", "agip", "ip "]],
+  [15, ["hotel", "albergo", "b&b", "booking", "airbnb", "residence", "ostello", "motel", "expedia"]],
+  [16, ["ristorante", "pizzeria", "trattoria", "osteria", "bar ", "caffe", "caffè", "mensa", "autogrill", "mcdonald", "burger", "sushi",
+        "bistrot", "tavola calda", "rosticceria", "panificio", "pranzo", "cena", "just eat", "deliveroo", "glovo"]],
+];
+const MESI_UP = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"];
+function nsExpenseRow(desc) { const t = norm(desc); for (const [row, words] of NS_EXPENSE_ROWS) if (words.some(w => t.includes(w))) return row; return 20; }
+function nsMonthWeeks(month) {   // lunedì delle settimane il cui giovedì cade nel mese
+  let mon = mondayOf(month + "-01"); if (addDays(mon, 3).slice(0, 7) !== month) mon = addDays(mon, 7);
+  const out = []; while (addDays(mon, 3).slice(0, 7) === month) { out.push(mon); mon = addDays(mon, 7); } return out;
+}
+function isoWeek(monIso) { const thu = addDays(monIso, 3), y = +thu.slice(0, 4);
+  const doy = (Date.UTC(y, +thu.slice(5, 7) - 1, +thu.slice(8, 10)) - Date.UTC(y, 0, 1)) / 864e5; return { week: Math.floor(doy / 7) + 1, year: y }; }
+const excelSerial = iso => (Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) - Date.UTC(1899, 11, 30)) / 864e5;
+function nsTemplate() {
+  const r = DB.t.app_settings[DB.hh + "|km_template"]; if (!r || !r.value) return null;
+  try { return JSON.parse(r.value); } catch (e) { return null; }
+}
+function notaSpeseData(month) {
+  const s = kmSettings(), fund = fundAccount(), fuel = fuelList();
+  const tx = fund ? rows("transactions").filter(t => t.kind === "trasferimento" && t.transfer_account_id === fund.id) : [];
+  const [y, m] = month.split("-").map(Number), name = s.name || KM_DEFAULTS.name;
+  let totalKm = 0, missing = [];
+  const sheets = nsMonthWeeks(month).map(mon => {
+    const w = kmWeek(mon), iw = isoWeek(mon), sun = addDays(mon, 6);
+    totalKm += w.km; missing = missing.concat(w.days.filter(x => x.missing).map(x => x.day));
+    const cells = { P3: String(iw.week), Q3: iw.year, E6: `data ${MESI_UP[m - 1]} ${y}`, I6: `nome:  ${name}`, C8: excelSerial(mon) };
+    if (w.weekend && w.weekend.odometer != null) cells.P5 = w.weekend.odometer;
+    const exp = {};
+    tx.filter(t => t.occurred_on >= mon && t.occurred_on <= sun).forEach(t => {
+      const k = NS_DAY_COLS[Math.round((new Date(t.occurred_on + "T12:00:00") - new Date(mon + "T12:00:00")) / 864e5)] + nsExpenseRow(t.description);
+      exp[k] = round2((exp[k] || 0) + Number(t.amount)); });
+    Object.assign(cells, exp);
+    const fw = fuel.filter(f => f.day >= mon && f.day <= sun);
+    fw.forEach(f => { const k = NS_DAY_COLS[Math.round((new Date(f.day + "T12:00:00") - new Date(mon + "T12:00:00")) / 864e5)] + NS_FUEL_ROW;
+      cells[k] = round2((cells[k] || 0) + f.amount); });
+    if (fw.length) cells["Q" + NS_FUEL_ROW] = round2(fw.reduce((a, f) => a + f.amount, 0));
+    w.days.forEach((x, i) => { const e = x.entry; if (!e) return; const r = NS_KM_ROWS[i];
+      cells["B" + r] = e.da || ""; cells["E" + r] = e.a || ""; if (e.day_km != null) cells["H" + r] = e.day_km;
+      cells["J" + r] = e.car || ""; cells["L" + r] = e.clients || ""; });
+    return [String(iw.week), cells];
+  });
+  const safe = name.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase()).replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  return { sheets, totalKm: round1(totalKm), missing, fileName: `Nota_spese_${String(m).padStart(2, "0")}-${y}-${safe}.xlsx`, name };
+}
+const xmlEsc = v => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function nsSetCell(xml, ref, value) {
+  const str = typeof value === "string";
+  const body = str ? `<is><t xml:space="preserve">${xmlEsc(value)}</t></is>` : `<v>${value}</v>`, tattr = str ? ' t="inlineStr"' : ' t="n"';
+  const m = new RegExp(`<c r="${ref}"([^>]*?)(?:/>|>[\\s\\S]*?</c>)`).exec(xml);
+  if (m) { const st = /\ss="(\d+)"/.exec(m[1]); return xml.slice(0, m.index) + `<c r="${ref}"${st ? ` s="${st[1]}"` : ""}${tattr}>${body}</c>` + xml.slice(m.index + m[0].length); }
+  const row = ref.replace(/^[A-Z]+/, ""), rm = new RegExp(`(<row r="${row}"[^>]*>)([\\s\\S]*?)(</row>)`).exec(xml);
+  if (!rm) return xml;
+  const at = rm.index + rm[1].length + rm[2].length;
+  return xml.slice(0, at) + `<c r="${ref}"${tattr}>${body}</c>` + xml.slice(at);
+}
+let jszipLoading = null;
+function loadJSZip() {
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  return jszipLoading = jszipLoading || new Promise((ok, ko) => { const sc = document.createElement("script");
+    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"; sc.onload = () => ok(window.JSZip);
+    sc.onerror = () => { jszipLoading = null; ko(new Error("Serve la connessione a internet per creare il file")); }; document.head.appendChild(sc); });
+}
+async function buildNotaSpese(month) {
+  const tpl = nsTemplate();
+  if (!tpl) throw new Error("Manca il modello della nota spese: apri il programma sul Mac (Km e nota spese) e attendi la sincronizzazione");
+  const JSZip = await loadJSZip(), d = notaSpeseData(month);
+  if (!d.sheets.length) throw new Error("Nessuna settimana nel mese");
+  const zin = await JSZip.loadAsync(tpl.data, { base64: true }), out = new JSZip(), put = (n, v) => out.file(n, v, { createFolders: false });
+  const txt = n => zin.file(n).async("string");
+  const [baseSheet, baseRels, drawing, drawingRels, wb0, wbRels0, ct0] = await Promise.all(["xl/worksheets/sheet1.xml", "xl/worksheets/_rels/sheet1.xml.rels",
+    "xl/drawings/drawing1.xml", "xl/drawings/_rels/drawing1.xml.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "[Content_Types].xml"].map(txt));
+  const skip = /^xl\/(worksheets\/(_rels\/)?sheet\d+\.xml(\.rels)?|drawings\/(_rels\/)?drawing\d+\.xml(\.rels)?|workbook\.xml|_rels\/workbook\.xml\.rels)$|^\[Content_Types\]\.xml$/;
+  for (const n of Object.keys(zin.files)) if (!zin.files[n].dir && !skip.test(n)) put(n, await zin.file(n).async("uint8array"));
+  const sh = [], rel = [], ct = [];
+  d.sheets.forEach(([title, cells], k) => { const i = k + 1;
+    let xml = i > 1 ? baseSheet.replace('tabSelected="true"', 'tabSelected="false"') : baseSheet;
+    for (const [ref, val] of Object.entries(cells)) xml = nsSetCell(xml, ref, val);
+    xml = xml.replace(/(<f[^>]*>[^<]*<\/f>)<v>[^<]*<\/v>/g, "$1");   // formule ricalcolate all'apertura
+    put(`xl/worksheets/sheet${i}.xml`, xml);
+    put(`xl/worksheets/_rels/sheet${i}.xml.rels`, baseRels.replace("drawing1.xml", `drawing${i}.xml`));
+    put(`xl/drawings/drawing${i}.xml`, drawing); put(`xl/drawings/_rels/drawing${i}.xml.rels`, drawingRels);
+    sh.push(`<sheet name="${xmlEsc(title)}" sheetId="${i}" state="visible" r:id="rIdS${i}"/>`);
+    rel.push(`<Relationship Id="rIdS${i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i}.xml"/>`);
+    ct.push(`<Override PartName="/xl/worksheets/sheet${i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
+      `<Override PartName="/xl/drawings/drawing${i}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`); });
+  const wb = wb0.replace(/<sheets>[\s\S]*?<\/sheets>/, `<sheets>${sh.join("")}</sheets>`).replace(/<definedNames>[\s\S]*?<\/definedNames>/, "")
+    .replace(/<calcPr[^>]*\/>/, '<calcPr fullCalcOnLoad="1"/>');
+  put("xl/workbook.xml", wb);
+  put("xl/_rels/workbook.xml.rels", wbRels0.replace(/<Relationship Id="[^"]+" Type="[^"]+\/worksheet" Target="[^"]+"\/>/g, "").replace("</Relationships>", rel.join("") + "</Relationships>"));
+  put("[Content_Types].xml", ct0.replace(/<Override PartName="\/xl\/(worksheets\/sheet\d+|drawings\/drawing\d+)\.xml"[^>]*\/>/g, "")
+    .replace(/<Override PartName="\/xl\/(worksheets|drawings)\/_rels\/[^"]+"[^>]*\/>/g, "").replace("</Types>", ct.join("") + "</Types>"));
+  const blob = await out.generateAsync({ type: "blob", compression: "DEFLATE", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  return { ...d, blob };
+}
