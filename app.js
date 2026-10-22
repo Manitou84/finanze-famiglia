@@ -122,7 +122,22 @@ function render() {
   $("#ttl").textContent = withMonth ? monthName(S.month).replace(/^./, c => c.toUpperCase()) : S.view === "famiglia" ? "Famiglia" : S.view === "spesa" ? "Lista della spesa" : "Impostazioni";
   $("#sub").innerHTML = `${esc(DB.hhName || "")} · ${statusLine()}`;
   ({ home: viewHome, movimenti: viewMovimenti, scadenze: viewScadenze, spesa: viewSpesa, famiglia: viewFamiglia, altro: viewAltro })[S.view]();
+  keepAwake();
 }
+
+/* Schermo sempre acceso solo nella lista della spesa (Screen Wake Lock: l'iPhone non si spegne finché la lista è aperta;
+   si rilascia da solo cambiando scheda, chiudendo l'app o dopo 45 minuti senza toccare nulla). */
+let wakeLock = null, wakeTouched = Date.now();
+function wakeWanted() { try { return localStorage.getItem("finanze-wake") !== "0"; } catch (e) { return true; } }
+async function keepAwake() {
+  const want = DB.session && S.view === "spesa" && wakeWanted() && document.visibilityState === "visible" && !$("#lock")
+    && Date.now() - wakeTouched < 45 * 60000;
+  if (want && !wakeLock && "wakeLock" in navigator) {
+    try { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } catch (e) { wakeLock = null; }
+  } else if (!want && wakeLock) { try { await wakeLock.release(); } catch (e) { } wakeLock = null; }
+}
+["touchstart", "click"].forEach(ev => document.addEventListener(ev, () => { wakeTouched = Date.now(); if (S.view === "spesa" && !wakeLock) keepAwake(); }, { passive: true }));
+setInterval(keepAwake, 60000);
 listeners.add(() => { if ($("#sub")) $("#sub").innerHTML = `${esc(DB.hhName || "")} · ${statusLine()}`; });
 
 /* ==========================================================================
@@ -604,7 +619,10 @@ function viewSpesa() {
   const soon = products().filter(p => +p.auto && !onList.has(p.id) && st[p.id].next_due && daysTo(st[p.id].next_due) <= 7)
     .map(p => ({ p, left: daysTo(st[p.id].next_due) })).sort((a, b) => a.left - b.left);
   const paused = shopParams().pause_on_trip && shopPaused();
+  const wakeOk = "wakeLock" in navigator;
   $("#view").innerHTML = `
+    <label class="wake-row"><span>☀︎ Schermo sempre acceso${wakeOk ? "" : `<br><span class="muted" style="font-size:12px">Serve iOS 18.4 o successivo</span>`}</span>
+      <input type="checkbox" class="switch" id="sh-wake" ${wakeWanted() && wakeOk ? "checked" : ""} ${wakeOk ? "" : "disabled"}></label>
     ${paused ? `<div class="card alert wait">Siete in vacanza (${esc(paused.name)}): i suggerimenti automatici sono in pausa.</div>` : ""}
     ${canEdit() ? `<form class="shop-add" id="sa"><input type="text" id="sa-n" list="sa-l" placeholder="Scrivi un prodotto…" autocomplete="off" enterkeyhint="done">
       <button class="btn primary" aria-label="Aggiungi">+</button><datalist id="sa-l">${products().map(p => `<option value="${esc(p.name)}">`).join("")}</datalist></form>
@@ -623,6 +641,7 @@ function viewSpesa() {
     ${soon.length ? `<div class="card"><h2>In arrivo</h2>${soon.map(({ p, left }) => `<div class="row"><span class="n">${esc(p.name)}<br>
       <span class="muted" style="font-size:12px">ogni ${st[p.id].interval} gg · ${left <= 0 ? "dovrebbe essere finito" : left === 1 ? "domani" : "tra " + left + " giorni"}</span></span>
       ${canEdit() ? `<button class="btn" data-now="${p.id}" style="padding:6px 14px">+</button>` : ""}</div>`).join("")}</div>` : ""}`;
+  if ($("#sh-wake")) $("#sh-wake").onchange = e => { try { localStorage.setItem("finanze-wake", e.target.checked ? "1" : "0"); } catch (x) { } keepAwake(); };
   if ($("#sa")) $("#sa").onsubmit = async e => {
     e.preventDefault(); const v = $("#sa-n").value; if (!v.trim()) return;
     try { const r = await addToList(v); toast(r.exists ? `${r.name} è già in lista` : r.created ? `${r.name} aggiunto (e messo nel catalogo)` : `${r.name} aggiunto`); viewSpesa(); $("#sa-n").focus(); }
@@ -1184,6 +1203,7 @@ document.addEventListener("visibilitychange", () => {
     let at = 0; try { at = +localStorage.getItem("finanze-hidden-at") || 0; } catch (e) { }
     if (!c.after || Date.now() - at > c.after * 60000) showLock();
   }
+  wakeTouched = Date.now(); keepAwake();
   if (DB.session) sync().then(() => !$("#sheet") && render());
 });
 window.addEventListener("online", () => DB.session && sync().then(() => !$("#sheet") && render()));
