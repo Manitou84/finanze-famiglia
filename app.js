@@ -190,9 +190,9 @@ function viewHome() {
       ${[["Entrate", d.income, "var(--in)"], ["Spese", d.expense, "var(--out)"], [saved >= 0 ? "Messo da parte" : "In meno", Math.abs(saved), saved >= 0 ? "var(--accent)" : "var(--out)"]]
         .map(([l, v, c]) => `<div class="hb-row"><span class="hb-l">${l}</span><div class="hb-track"><div style="width:${Math.max(v ? 2 : 0, v / sumIO * 100)}%;background:${c}"></div></div><b class="num">${eur(v)}</b></div>`).join("")}
     </div>
-    ${S.month === thisMonth() ? homeKmCard() : ""}
+    ${(() => { const km = S.month === thisMonth() ? homeKmCard() : "", fc = homeForecastCard();
+      return km && fc ? `<div class="duo">${fc}${km}</div>` : fc + km; })()}
     ${S.month === thisMonth() && new Date().getDate() <= 10 && !S.sumSeen ? homeSummaryCard() : ""}
-    ${homeForecastCard()}
     ${homeGoalsCard()}
 
     <div class="card"><h2>Dove sono andati i soldi</h2>
@@ -253,7 +253,7 @@ function homeForecastCard() {
   const low = m.end < f.settings.threshold;
   return `<div class="card fc-w ${low ? "low" : ""}" id="fc-open"><div class="row" style="padding:0;border:0"><span class="n"><span class="muted" style="font-size:13px">Previsto a fine ${MESI[+m.month.slice(5) - 1]}</span><br>
       <b class="num" style="font-size:24px">${eur(m.end)}</b></span><span class="muted">›</span></div>
-    <div class="muted" style="font-size:12px;margin-top:4px">Oggi ${eur(f.balance)}${f.months[1] ? ` · fine ${MESI[+f.months[1].month.slice(5) - 1]} ${eur(f.months[1].end)}` : ""}</div>
+    <div class="muted fc-sub" style="font-size:12px;margin-top:4px"><span>Oggi ${eur(f.balance)}</span>${f.months[1] ? `<span>Fine ${MESI[+f.months[1].month.slice(5) - 1]} ${eur(f.months[1].end)}</span>` : ""}</div>
     ${f.warning ? `<div class="badge late" style="margin-top:8px">Sotto i ${eur(f.settings.threshold)} a fine ${MESI[+f.warning.month.slice(5) - 1]}</div>` : ""}</div>`;
 }
 function openForecast() {
@@ -352,8 +352,7 @@ function homeKmCard() {
     : work ? (todayE ? `<button class="btn sm" id="km-today">Oggi ${fmtKm(todayE.day_km)} km ✓</button>` : `<button class="btn primary sm" id="km-today">Km di oggi</button>`)
     : `<button class="btn sm" id="km-today">Segna km</button>`;
   return `<div class="card km-w km-mini"><div class="km-head"><b>Km lavoro</b>
-      <span class="muted">sett. ${fmtKm(wk.km)} km${miss ? ` · <span class="out">${miss} da fare</span>` : ""}</span>
-      <button class="btn link sm" id="km-week">Settimana ›</button></div>
+      <button class="btn link sm" id="km-week">sett. ${fmtKm(wk.km)} km${miss ? ` · <span class="out">${miss} da fare</span>` : ""} ›</button></div>
     <div class="km-btns">${main}${canEdit() ? `<button class="btn sm" id="km-fuel">+ Carburante</button>` : ""}</div></div>`;
 }
 function bindHomeKm() {

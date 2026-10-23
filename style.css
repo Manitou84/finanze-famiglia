@@ -228,6 +228,25 @@ details summary { color: var(--accent); font-size: 13px; margin: 8px 0 4px; curs
 .km-mini { padding: 12px 14px; }
 .km-head { display: flex; align-items: center; gap: 8px; font-size: 14.5px; }
 .km-head .muted { flex: 1; font-size: 12.5px; }
+.km-head b { flex: 1; }
+.km-head .btn.link { font-size: 13px; }
+.fc-sub span + span::before { content: " · "; }
 .km-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .btn.sm { padding: 8px 10px; font-size: 14px; border-radius: 12px; }
 .btn.link.sm { padding: 2px 0; }
+
+/* Riepilogo: previsione a sinistra, km lavoro a destra */
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; align-items: stretch; }
+.duo > .card { margin: 0; min-width: 0; }
+.duo .fc-w { padding: 12px 14px; }
+.duo .fc-w b.num { font-size: 20px !important; }
+.duo .fc-w .muted[style] { font-size: 11.5px !important; }
+.duo .km-mini { text-align: right; display: flex; flex-direction: column; }
+.duo .km-head { flex-direction: column; align-items: flex-end; gap: 0; }
+.duo .km-head b { flex: none; }
+.duo .fc-sub span { display: block; }
+.duo .fc-sub span + span::before { content: none; }
+.duo .km-btns { margin-top: auto; padding-top: 8px; }
+.duo .km-head .muted { flex: none; }
+.duo .km-btns { grid-template-columns: 1fr; gap: 6px; margin-top: 8px; }
+.duo .btn.sm { padding: 7px 8px; font-size: 13.5px; }
