@@ -1067,8 +1067,22 @@ function kmRows() {
   return rs;
 }
 const round1 = n => Math.round(n * 10) / 10;
+/* I km sono di una sola persona: si vedono solo sul suo account (km_settings.owner = id utente).
+   Finché non è segnato, li vede chi ha già inserito dei km (o tutti, se non ce ne sono ancora). */
+function kmMine() {
+  const s = kmSettings(); if (s.owner) return s.owner === uid();
+  const me = DB.members[uid()] || DB.email, rs = rows("work_km");
+  return !rs.length || rs.some(r => r.updated_by === me);
+}
+function claimKm() {
+  const s = kmSettings(); if (s.owner) return;
+  const r = DB.t.app_settings[DB.hh + "|km_settings"]; let v = {};
+  try { v = JSON.parse(r && r.value || "{}"); } catch (e) { }
+  write("app_settings", { key: "km_settings", value: JSON.stringify(Object.assign(v, { owner: uid() })) });
+}
 async function saveKm(d) {
   guard();
+  claimKm();
   const kind = d.kind === "weekend" ? "weekend" : "giorno", day = d.day || todayIso();
   const odo = d.odometer === "" || d.odometer == null ? null : parseAmount(d.odometer), km = d.km === "" || d.km == null ? null : parseAmount(d.km);
   if (odo == null && km == null) throw new Error("Scrivi i km del contachilometri");

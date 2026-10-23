@@ -214,3 +214,20 @@ details summary { color: var(--accent); font-size: 13px; margin: 8px 0 4px; curs
 .switch:checked { background: var(--accent, #2E5E4E); }
 .switch:checked::after { transform: translateX(18px); }
 .switch:disabled { opacity: .4; }
+
+/* riepilogo del mese: barre orizzontali */
+.hbars { padding: 14px 16px 10px; }
+.hb-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; font-size: 15px; }
+.hb-h .muted { font-size: 12.5px; }
+.hb-row { display: grid; grid-template-columns: 104px 1fr auto; align-items: center; gap: 10px; margin-bottom: 9px; font-size: 13.5px; }
+.hb-l { color: var(--muted); }
+.hb-track { height: 14px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.hb-track div { height: 100%; border-radius: 999px; }
+.hb-row b { font-size: 14px; min-width: 84px; text-align: right; }
+/* km lavoro compatto */
+.km-mini { padding: 12px 14px; }
+.km-head { display: flex; align-items: center; gap: 8px; font-size: 14.5px; }
+.km-head .muted { flex: 1; font-size: 12.5px; }
+.km-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.btn.sm { padding: 8px 10px; font-size: 14px; border-radius: 12px; }
+.btn.link.sm { padding: 2px 0; }

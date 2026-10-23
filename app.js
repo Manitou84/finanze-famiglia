@@ -186,11 +186,10 @@ function viewHome() {
     ${tripsView().filter(t => t.state === "in corso").map(t => `<div class="card alert ok" data-gotrip="${t.id}" style="border-left:5px solid ${t.color}"><b>In vacanza: ${esc(t.name)}</b>
       ${eur(t.spent)} spesi${t.budget ? ` di ${eur(t.budget)}` : ""}${t.per_day ? `, ${eur(t.per_day)} al giorno` : ""} ›</div>`).join("")}
     ${tripDeadlines().filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}" data-gotrip="${x.trip_id}"><b>${esc(x.label)}</b> per ${esc(x.trip)}: entro il ${shortDate(x.due)}${x.days > 0 ? `, tra ${x.days} ${x.days === 1 ? "giorno" : "giorni"}` : ""}</div>`).join("")}
-    <p class="hero">${sentence}</p>
-    <div class="split"><div style="width:${Math.min(d.expense, d.income || d.expense) / sumIO * 100}%;background:var(--out)"></div>
-      <div style="width:${Math.max(0, saved) / sumIO * 100}%;background:var(--in)"></div></div>
-    <div class="legend"><span><i class="dot" style="background:var(--out)"></i>Speso</span><span><i class="dot" style="background:var(--in)"></i>Messo da parte</span>
-      ${d.income ? `<span>${Math.round(Math.max(0, saved) / d.income * 100)}% risparmiato</span>` : ""}</div>
+    <div class="card hbars"><div class="hb-h"><b>${intro}</b>${d.income ? `<span class="muted">${saved >= 0 ? Math.round(saved / d.income * 100) + "% messo da parte" : "spese oltre le entrate"}</span>` : ""}</div>
+      ${[["Entrate", d.income, "var(--in)"], ["Spese", d.expense, "var(--out)"], [saved >= 0 ? "Messo da parte" : "In meno", Math.abs(saved), saved >= 0 ? "var(--accent)" : "var(--out)"]]
+        .map(([l, v, c]) => `<div class="hb-row"><span class="hb-l">${l}</span><div class="hb-track"><div style="width:${Math.max(v ? 2 : 0, v / sumIO * 100)}%;background:${c}"></div></div><b class="num">${eur(v)}</b></div>`).join("")}
+    </div>
     ${S.month === thisMonth() ? homeKmCard() : ""}
     ${S.month === thisMonth() && new Date().getDate() <= 10 && !S.sumSeen ? homeSummaryCard() : ""}
     ${homeForecastCard()}
@@ -343,17 +342,19 @@ const dayLabel = iso => { const d = new Date(iso + "T12:00:00"); return `${GIORN
 const fmtKm = v => v == null ? "—" : new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 }).format(v);
 function lastSunday() { const t = todayIso(), d = new Date(t + "T12:00:00").getDay(); return d === 0 ? t : addDays(t, -d); }
 function homeKmCard() {
-  if (!rows("work_km").length && !canEdit()) return "";
+  if (!kmMine() || (!rows("work_km").length && !canEdit())) return "";
   const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
   const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
   const weNeeded = (dow === 0 || dow === 1) && !rs.some(r => r.day === sun && r.kind === "weekend") && rs.length;
   const wk = kmWeek(mondayOf(t)), miss = wk.days.filter(x => x.missing && x.day < t).length;
-  return `<div class="card km-w"><div class="row" style="padding:0;border:0"><h2 class="n" style="margin:0">Km lavoro</h2><button class="btn link" id="km-week">Settimana ›</button></div>
-    ${dow >= 1 && dow <= 5 ? (todayE ? `<p class="muted" style="margin:6px 0 0">Oggi: <b>${fmtKm(todayE.day_km)} km</b>${todayE.a ? ` · ${esc(todayE.a)}` : ""}</p>`
-      : `<button class="btn primary wide" id="km-today" style="margin-top:10px">Segna i km di oggi</button>`) : ""}
-    ${weNeeded ? `<button class="btn ${dow === 0 ? "primary" : ""} wide" id="km-we" style="margin-top:10px">Segna i km del weekend</button>` : ""}
-    ${canEdit() ? `<button class="btn wide" id="km-fuel" style="margin-top:10px">⛽ Carburante carta aziendale</button>` : ""}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Questa settimana ${fmtKm(wk.km)} km${miss ? ` · <span class="out">${miss} ${miss === 1 ? "giorno" : "giorni"} da completare</span>` : ""}</p></div>`;
+  const work = dow >= 1 && dow <= 5;
+  const main = weNeeded ? `<button class="btn ${dow === 0 ? "primary" : ""} sm" id="km-we">Km weekend</button>`
+    : work ? (todayE ? `<button class="btn sm" id="km-today">Oggi ${fmtKm(todayE.day_km)} km ✓</button>` : `<button class="btn primary sm" id="km-today">Km di oggi</button>`)
+    : `<button class="btn sm" id="km-today">Segna km</button>`;
+  return `<div class="card km-w km-mini"><div class="km-head"><b>Km lavoro</b>
+      <span class="muted">sett. ${fmtKm(wk.km)} km${miss ? ` · <span class="out">${miss} da fare</span>` : ""}</span>
+      <button class="btn link sm" id="km-week">Settimana ›</button></div>
+    <div class="km-btns">${main}${canEdit() ? `<button class="btn sm" id="km-fuel">+ Carburante</button>` : ""}</div></div>`;
 }
 function bindHomeKm() {
   if ($("#km-today")) $("#km-today").onclick = () => openKm("giorno");
