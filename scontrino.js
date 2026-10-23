@@ -99,7 +99,7 @@ const SCONTRINO = (() => {
     if (window.Tesseract) return Promise.resolve();
     libLoading = libLoading || new Promise((ok, ko) => {
       const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+      s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
       s.onload = ok; s.onerror = () => { libLoading = null; ko(new Error("Serve internet la prima volta per scaricare il lettore di scontrini")); };
       document.head.appendChild(s);
     });

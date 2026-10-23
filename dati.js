@@ -182,7 +182,9 @@ async function pull(t, tk) {
     for (const r of list) {
       const k = keyOf(t, r); const mine = DB.outbox[t + "|" + k];
       if (mine && new Date(mine.updated_at) >= new Date(r.updated_at)) continue;   // la mia modifica è più recente
-      const { synced_at, ...row } = r; DB.t[t][k] = row;
+      const { synced_at, ...row } = r;
+      if (row.color != null && !/^#[0-9A-Fa-f]{3,8}$/.test(row.color)) row.color = "#888780";   // difesa: un colore è solo un colore
+      DB.t[t][k] = row;
       if (mine) delete DB.outbox[t + "|" + k];
     }
     cursor = list[list.length - 1].synced_at;
@@ -955,6 +957,10 @@ function forecast() {
     const last = vtx.find(t => t.vehicle_id === v.id && expenseType(t.description) === kind && (f !== "revision_due" || (t.description || "").toLowerCase().includes("revision")));
     carEvents.push({ date: v[f], name: `${label} ${v.name}`, amount: last ? last.amount : null, tag: "auto" });
   }
+  try {   // scadenze di casa con costo previsto (stesse del Mac: api_casa.py)
+    const hr = DB.t.app_settings[DB.hh + "|home_items"];
+    for (const h of JSON.parse(hr && hr.value || "[]")) if (h.cost && h.next_due && !covered([h.name.toLowerCase()])) carEvents.push({ date: h.next_due, name: h.name, amount: +h.cost, tag: "casa" });
+  } catch (e) { }
   const tripItems = rows("trip_items").filter(i => !i.booked && i.amount != null && i.due_date && trips().some(t => t.id === i.trip_id && t.status !== "annullata"));
   const goalsMonthly = goalsView().monthly_total;
   const months = []; let bal = round2(liquid.reduce((s, a) => s + a.balance, 0)); const startBal = bal;
@@ -968,7 +974,7 @@ function forecast() {
       const sign = r.kind === "entrata" ? 1 : -1;
       items.push({ date: d, name: r.name, amount: sign * r.amount, tag: sign > 0 ? "entrata" : "ricorrente", late: i === 0 && d < today });
     }
-    for (const e of carEvents) if (mStart <= e.date && e.date <= mEnd && (i > 0 || e.date >= today)) items.push({ date: e.date, name: e.name, amount: e.amount ? -e.amount : null, tag: "auto", estimated: true });
+    for (const e of carEvents) if (mStart <= e.date && e.date <= mEnd && (i > 0 || e.date >= today)) items.push({ date: e.date, name: e.name, amount: e.amount ? -e.amount : null, tag: e.tag, estimated: e.tag === "auto" });
     for (const t of tripItems) if (mStart <= t.due_date && t.due_date <= mEnd) items.push({ date: t.due_date, name: `${t.name} (${DB.t.trips[t.trip_id].name})`, amount: -Number(t.amount), tag: "vacanza" });
     const daysLeft = mEnd >= from ? daysTo(mEnd) - daysTo(from) + 1 : 0;
     const varOut = round2(daily * daysLeft), incMore = round2(Math.max(0, usual - (i === 0 ? gotNow : 0)));
@@ -1079,7 +1085,7 @@ function deleteKm(id) { guard(); write("work_km", { id, deleted_at: nowIso() });
 /* carburante pagato con la carta aziendale: va nella riga «Carburante card aziendale» della nota spese (Mac: api_km.py) */
 function fuelList() {
   const r = DB.t.app_settings[DB.hh + "|fuel_card"];
-  try { return (JSON.parse(r && r.value || "[]") || []).filter(x => x && x.day && x.amount != null).map(x => ({ ...x, amount: Number(x.amount) })); } catch (e) { return []; }
+  try { return (JSON.parse(r && r.value || "[]") || []).filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.day) && /^[A-Za-z0-9-]{1,64}$/.test(x.id) && isFinite(x.amount)).map(x => ({ ...x, amount: Number(x.amount) })); } catch (e) { return []; }
 }
 function saveFuel(d) {
   guard();
@@ -1174,8 +1180,8 @@ let jszipLoading = null;
 function loadJSZip() {
   if (window.JSZip) return Promise.resolve(window.JSZip);
   return jszipLoading = jszipLoading || new Promise((ok, ko) => { const sc = document.createElement("script");
-    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"; sc.onload = () => ok(window.JSZip);
-    sc.onerror = () => { jszipLoading = null; ko(new Error("Serve la connessione a internet per creare il file")); }; document.head.appendChild(sc); });
+    sc.src = "jszip.min.js"; /* copia locale, niente CDN */ sc.onload = () => ok(window.JSZip);
+    sc.onerror = () => { jszipLoading = null; ko(new Error("Non riesco a caricare il modulo per creare il file: riapri l'app e riprova")); }; document.head.appendChild(sc); });
 }
 async function buildNotaSpese(month) {
   const tpl = nsTemplate();
