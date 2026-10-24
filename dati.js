@@ -632,7 +632,7 @@ function export730Csv(year) {
 /* ---------- vacanze (stesse regole del Mac) ---------- */
 const TRIP_KINDS = { trasporto: "Viaggio", alloggio: "Alloggio", attivita: "Attività", altro: "Altro" };
 const TRIP_COLORS = ["#378ADD", "#1D9E75", "#D85A30", "#7F77DD", "#BA7517", "#D4537E"];
-const HOME_CATEGORIES = ["bollette", "casa e mutuo/affitto", "assicurazioni", "banca e tasse", "abbonamenti"];
+const HOME_CATEGORIES = ["bollette", "casa e mutuo/affitto", "casa", "mutuo", "assicurazioni", "banca e tasse", "abbonamenti"];
 const PREPAID = ["volo", "voli", "ryanair", "easyjet", "wizz", "ita airways", "alitalia", "vueling", "lufthansa", "airfrance",
   "booking", "airbnb", "expedia", "edreams", "volagratis", "lastminute", "hotel", "albergo", "b&b", "agriturismo",
   "residence", "campeggio", "camping", "villaggio", "trenitalia", "italo", "traghett", "moby", "tirrenia",

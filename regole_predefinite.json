@@ -41,8 +41,7 @@
       "lando",
       "linea verde"
     ],
-    "Casa e mutuo/affitto": [
-      "mutuo",
+    "Casa": [
       "affitto",
       "condominio",
       "ikea",
@@ -52,6 +51,11 @@
       "mondo convenienza",
       "maison du monde",
       "ferramenta"
+    ],
+    "Mutuo": [
+      "mutuo",
+      "rata mutuo",
+      "finanziamento casa"
     ],
     "Bollette": [
       "enel",
