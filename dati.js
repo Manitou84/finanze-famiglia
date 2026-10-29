@@ -1059,7 +1059,9 @@ function kmRows() {
   let last = null, lastWork = null;
   for (const r of rs) {
     r.day_km = null;
-    if (r.kind === "giorno") {
+    if (r.kind === "giorno" && kmAbsence(r)) {   // ferie: niente km di lavoro; la lettura del rientro azzera il conto
+      r.private_km = r.odometer != null && lastWork != null ? round1(r.odometer - lastWork) : null; if (r.odometer != null) last = r.odometer;
+    } else if (r.kind === "giorno") {
       if (r.km != null) r.day_km = r.km; else if (r.odometer != null && last != null) r.day_km = round1(r.odometer - last);
       if (r.odometer != null) last = lastWork = r.odometer;
     } else { r.private_km = r.odometer != null && lastWork != null ? round1(r.odometer - lastWork) : null; if (r.odometer != null) last = r.odometer; }
@@ -1092,12 +1094,37 @@ async function saveKm(d) {
   const prev = kmRows().filter(r => r.odometer != null && (r.day < day || (r.day === day && kind === "weekend" && r.kind === "giorno"))).pop();
   const row = { id, day, kind, odometer: odo, km, deleted_at: null };
   if (kind === "giorno") Object.assign(row, { da: (d.da || s.da).trim(), a: [...new Set(kmSplit(d.a))].join(", ") || null,
-    car: (d.car || carOn(s, day)).trim(), clients: [...new Set(kmSplit(d.clients))].join(", ") || null, notes: (d.notes || "").trim() || null });
+    car: (d.car || carOn(s, day)).trim(), clients: [...new Set(kmSplit(d.clients))].join(", ") || null, notes: /^assenza:/.test(d.notes || "") ? null : (d.notes || "").trim() || null });
   write("work_km", row);
   return { warning: odo != null && prev && odo < prev.odometer ? `Il contachilometri è più basso dell'ultima lettura (${prev.odometer}): controlla il numero` : null };
 }
 /* giorno con paesi/clienti ma senza km (es. giro caricato dal CRM): i km si scrivono la sera */
-const kmEmpty = r => r.odometer == null && r.km == null;
+const kmEmpty = r => r.odometer == null && r.km == null && !kmAbsence(r);
+/* ferie, malattia, permesso, festivo: giorno senza lavoro (nota «assenza:Ferie»). Nella nota spese, al posto di paesi e
+   clienti c'è scritto FERIE (ecc.). Il contachilometri del rientro, se c'è, separa i km fatti in ferie (privati). */
+const KM_ABSENCES = ["Ferie", "Malattia", "Permesso", "Festivo"];
+const kmAbsence = r => { const m = /^assenza:(\w+)$/.exec((r && r.notes) || ""); return m && KM_ABSENCES.includes(m[1]) ? m[1] : null; };
+async function saveAbsence(d) {
+  guard(); claimKm();
+  const type = KM_ABSENCES.includes(d.type) ? d.type : "Ferie", from = d.from, to = d.to || d.from;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from || "") || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) throw new Error("Controlla le date");
+  if (addDays(from, 62) < to) throw new Error("Al massimo due mesi alla volta");
+  const odo = d.odometer === "" || d.odometer == null ? null : parseAmount(d.odometer);
+  if (odo != null && isNaN(odo)) throw new Error("Contachilometri non valido");
+  const cur = {}; kmRows().forEach(r => { if (r.kind === "giorno") cur[r.day] = r; });
+  const days = []; for (let x = from; x <= to; x = addDays(x, 1)) { const w = new Date(x + "T12:00:00").getDay(); if (w >= 1 && w <= 5) days.push(x); }
+  if (!days.length) throw new Error("Nel periodo non ci sono giorni feriali");
+  const out = { saved: 0, skipped: [] };
+  for (const day of days) {
+    const e = cur[day];
+    if (e && (e.odometer != null || e.km != null) && !kmAbsence(e)) { out.skipped.push(day); continue; }   // giorno di lavoro già con i km
+    const last = day === days[days.length - 1];
+    write("work_km", { id: await uuid5([DB.hh, "km", "giorno", day].join(":")), day, kind: "giorno", odometer: last ? odo : null, km: null,
+      da: null, a: null, car: null, clients: null, notes: "assenza:" + type, deleted_at: null });
+    out.saved++;
+  }
+  return out;
+}
 
 /* ---------- giro visite dal CRM: il PDF «Paesi e clienti …» porta i dati nelle Parole chiave (CRMGIRO1:<base64 JSON>) ---------- */
 async function leggiGiroCrm(file) {
@@ -1148,11 +1175,12 @@ async function saveGiroCrm(giro, replace) {
   kmRows().forEach(r => { if (r.kind === "giorno") cur[r.day] = r; });
   for (const d of giro.days) {
     const e = cur[d.day];
-    if (e && (e.a || e.clients) && !replace.has(d.day)) { out.kept++; continue; }
+    if (e && (e.a || e.clients || kmAbsence(e)) && !replace.has(d.day)) { out.kept++; continue; }
     const id = await uuid5([DB.hh, "km", "giorno", d.day].join(":"));
     const old = DB.t.work_km && Object.values(DB.t.work_km).find(r => r.id === id);
     const row = { id, day: d.day, kind: "giorno", a: d.towns.join(", ") || null, clients: d.clients.join(", ") || null,
       da: (e && e.da) || s.da, car: (e && e.car) || carOn(s, d.day), deleted_at: null };
+    if (e && kmAbsence(e)) row.notes = null;   // era segnato ferie: torna giorno di lavoro
     if (!e) Object.assign(row, { odometer: null, km: null, notes: old && !old.deleted_at ? old.notes : null });   // giorno nuovo (o eliminato prima): senza km
     write("work_km", row); out.saved++;
   }
@@ -1235,7 +1263,8 @@ function notaSpeseData(month) {
     fw.forEach(f => { const k = NS_DAY_COLS[Math.round((new Date(f.day + "T12:00:00") - new Date(mon + "T12:00:00")) / 864e5)] + NS_FUEL_ROW;
       cells[k] = round2((cells[k] || 0) + f.amount); });
     if (fw.length) cells["Q" + NS_FUEL_ROW] = round2(fw.reduce((a, f) => a + f.amount, 0));
-    w.days.forEach((x, i) => { const e = x.entry; if (!e) return; const r = NS_KM_ROWS[i];
+    w.days.forEach((x, i) => { const e = x.entry; if (!e) return; const r = NS_KM_ROWS[i], ab = kmAbsence(e);
+      if (ab) { cells["E" + r] = ab.toUpperCase(); cells["L" + r] = ab.toUpperCase(); return; }
       cells["B" + r] = e.da || ""; cells["E" + r] = e.a || ""; if (e.day_km != null) cells["H" + r] = e.day_km;
       cells["J" + r] = e.car || ""; cells["L" + r] = e.clients || ""; });
     return [String(iw.week), cells];
