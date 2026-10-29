@@ -1085,7 +1085,8 @@ async function saveKm(d) {
   claimKm();
   const kind = d.kind === "weekend" ? "weekend" : "giorno", day = d.day || todayIso();
   const odo = d.odometer === "" || d.odometer == null ? null : parseAmount(d.odometer), km = d.km === "" || d.km == null ? null : parseAmount(d.km);
-  if (odo == null && km == null) throw new Error("Scrivi i km del contachilometri");
+  // senza km si può salvare un giorno di lavoro solo con paesi o clienti (giro caricato dal CRM, km la sera)
+  if (odo == null && km == null && (kind === "weekend" || (!kmSplit(d.a).length && !kmSplit(d.clients).length))) throw new Error("Scrivi i km del contachilometri");
   if ((odo != null && isNaN(odo)) || (km != null && isNaN(km))) throw new Error("Numero non valido");
   const s = kmSettings(), id = await uuid5([DB.hh, "km", kind, day].join(":"));
   const prev = kmRows().filter(r => r.odometer != null && (r.day < day || (r.day === day && kind === "weekend" && r.kind === "giorno"))).pop();
@@ -1094,6 +1095,68 @@ async function saveKm(d) {
     car: (d.car || carOn(s, day)).trim(), clients: [...new Set(kmSplit(d.clients))].join(", ") || null, notes: (d.notes || "").trim() || null });
   write("work_km", row);
   return { warning: odo != null && prev && odo < prev.odometer ? `Il contachilometri è più basso dell'ultima lettura (${prev.odometer}): controlla il numero` : null };
+}
+/* giorno con paesi/clienti ma senza km (es. giro caricato dal CRM): i km si scrivono la sera */
+const kmEmpty = r => r.odometer == null && r.km == null;
+
+/* ---------- giro visite dal CRM: il PDF «Paesi e clienti …» porta i dati nelle Parole chiave (CRMGIRO1:<base64 JSON>) ---------- */
+async function leggiGiroCrm(file) {
+  if (!file) throw new Error("Nessun file scelto");
+  if (file.size > 25 * 1024 * 1024) throw new Error("Il file è troppo grande per essere il PDF del giro");
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const latin = b => { let s = ""; for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); return s; };
+  // il base64 può essere spezzato a capo (con «\» nelle stringhe PDF): si tolgono gli a capo prima di cercarlo
+  const find = txt => { const m = txt.replace(/\\\r?\n/g, "").match(/CRMGIRO1:([A-Za-z0-9+\/=]+)/); return m ? m[1] : null; };
+  let raw = latin(buf), b64 = find(raw);
+  if (!b64 && typeof DecompressionStream !== "undefined") {
+    // metadati compressi (PDF recenti): si aprono i pezzi compressi uno per uno finché si trova il riepilogo
+    const re = /stream\r?\n/g; let m;
+    while (!b64 && (m = re.exec(raw))) {
+      const start = m.index + m[0].length, end = raw.indexOf("endstream", start);
+      if (end < 0) break;
+      try {
+        const out = await new Response(new Blob([buf.subarray(start, end)]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer().catch(() => null);
+        if (out) b64 = find(latin(new Uint8Array(out)));
+      } catch (e) { }
+      re.lastIndex = end;
+    }
+  }
+  if (!b64) throw new Error("Questo PDF non viene dal CRM (manca il riepilogo del giro)");
+  let data;
+  try { data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))); }
+  catch (e) { throw new Error("Il riepilogo del giro nel PDF è rovinato: rigeneralo dal CRM"); }
+  if (!data || data.kind !== "giro_km" || !Array.isArray(data.days)) throw new Error("Il PDF non contiene un giro visite");
+  if (Number(data.v) > 1) throw new Error("Il PDF viene da una versione più nuova del CRM: aggiorna l'app");
+  // solo date vere e testi brevi: il contenuto del file non può finire nell'app così com'è
+  const clean = a => [...new Set((Array.isArray(a) ? a : []).map(x => String(x == null ? "" : x).replace(/[,;\n\r\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80)).filter(Boolean))].slice(0, 40);
+  const days = {};
+  for (const d of data.days.slice(0, 62)) {
+    if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.date) || isNaN(new Date(d.date + "T12:00:00"))) continue;
+    const prev = days[d.date] || { day: d.date, towns: [], clients: [] };
+    prev.towns = clean(prev.towns.concat(clean(d.towns))); prev.clients = clean(prev.clients.concat(clean(d.clients)));
+    days[d.date] = prev;
+  }
+  const list = Object.values(days).filter(d => d.towns.length || d.clients.length).sort((a, b) => a.day.localeCompare(b.day));
+  if (!list.length) throw new Error("Nel PDF non ci sono giorni con paesi o clienti");
+  return { from: list[0].day, to: list[list.length - 1].day, days: list };
+}
+/* salva paesi e clienti del giro; i km (contachilometri) non si toccano mai.
+   replace: insieme dei giorni in cui sostituire A e CLIENTI già scritti (gli altri restano com'erano). */
+async function saveGiroCrm(giro, replace) {
+  guard(); claimKm();
+  const s = kmSettings(), cur = {}, out = { saved: 0, kept: 0 };
+  kmRows().forEach(r => { if (r.kind === "giorno") cur[r.day] = r; });
+  for (const d of giro.days) {
+    const e = cur[d.day];
+    if (e && (e.a || e.clients) && !replace.has(d.day)) { out.kept++; continue; }
+    const id = await uuid5([DB.hh, "km", "giorno", d.day].join(":"));
+    const old = DB.t.work_km && Object.values(DB.t.work_km).find(r => r.id === id);
+    const row = { id, day: d.day, kind: "giorno", a: d.towns.join(", ") || null, clients: d.clients.join(", ") || null,
+      da: (e && e.da) || s.da, car: (e && e.car) || carOn(s, d.day), deleted_at: null };
+    if (!e) Object.assign(row, { odometer: null, km: null, notes: old && !old.deleted_at ? old.notes : null });   // giorno nuovo (o eliminato prima): senza km
+    write("work_km", row); out.saved++;
+  }
+  return out;
 }
 function deleteKm(id) { guard(); write("work_km", { id, deleted_at: nowIso() }); }
 /* carburante pagato con la carta aziendale: va nella riga «Carburante card aziendale» della nota spese (Mac: api_km.py) */
@@ -1113,8 +1176,9 @@ function saveFuel(d) {
 function deleteFuel(id) { guard(); write("app_settings", { key: "fuel_card", value: JSON.stringify(fuelList().filter(x => x.id !== id)) }); }
 function kmWeek(monIso) {
   const rs = kmRows(), by = {}; rs.forEach(r => by[r.day + "|" + r.kind] = r);
-  const first = rs.length ? rs[0].day : "9999";   // i giorni prima di cominciare non sono «mancanti»
-  const days = [0, 1, 2, 3, 4].map(i => { const d = addDays(monIso, i); return { day: d, entry: by[d + "|giorno"] || null, missing: !by[d + "|giorno"] && d <= todayIso() && d > first }; });
+  const done = rs.filter(r => !kmEmpty(r)), first = done.length ? done[0].day : "9999";   // i giorni prima di cominciare non sono «mancanti»
+  const days = [0, 1, 2, 3, 4].map(i => { const d = addDays(monIso, i), e = by[d + "|giorno"] || null;
+    return { day: d, entry: e, planned: !!e && kmEmpty(e), missing: (!e || kmEmpty(e)) && d <= todayIso() && d > first }; });
   return { monday: monIso, days, weekend: by[addDays(monIso, 6) + "|weekend"] || null, km: round1(days.reduce((s, x) => s + ((x.entry || {}).day_km || 0), 0)) };
 }
 const mondayOf = iso => { const d = new Date(iso + "T12:00:00"); return addDays(iso, -((d.getDay() + 6) % 7)); };

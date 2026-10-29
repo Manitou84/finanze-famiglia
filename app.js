@@ -349,17 +349,51 @@ function homeKmCard() {
   const wk = kmWeek(mondayOf(t)), miss = wk.days.filter(x => x.missing && x.day < t).length;
   const work = dow >= 1 && dow <= 5;
   const main = weNeeded ? `<button class="btn ${dow === 0 ? "primary" : ""} sm" id="km-we">Km weekend</button>`
-    : work ? (todayE ? `<button class="btn sm" id="km-today">Oggi ${fmtKm(todayE.day_km)} km ✓</button>` : `<button class="btn primary sm" id="km-today">Km di oggi</button>`)
+    : work ? (todayE && !kmEmpty(todayE) ? `<button class="btn sm" id="km-today">Oggi ${fmtKm(todayE.day_km)} km ✓</button>` : `<button class="btn primary sm" id="km-today">Km di oggi</button>`)
     : `<button class="btn sm" id="km-today">Segna km</button>`;
   return `<div class="card km-w km-mini"><div class="km-head"><b>Km lavoro</b>
       <button class="btn link sm" id="km-week">sett. ${fmtKm(wk.km)} km${miss ? ` · <span class="out">${miss} da fare</span>` : ""} ›</button></div>
-    <div class="km-btns">${main}${canEdit() ? `<button class="btn sm" id="km-fuel">+ Carburante</button>` : ""}</div></div>`;
+    <div class="km-btns">${main}${canEdit() ? `<button class="btn sm" id="km-fuel">+ Carburante</button>` : ""}</div>
+    ${canEdit() ? `<button class="btn link sm km-crm" id="km-crm">Carica paesi e clienti dal CRM</button>` : ""}</div>`;
 }
 function bindHomeKm() {
   if ($("#km-today")) $("#km-today").onclick = () => openKm("giorno");
   if ($("#km-we")) $("#km-we").onclick = () => openKm("weekend");
   if ($("#km-week")) $("#km-week").onclick = () => openKmWeek(mondayOf(todayIso()));
   if ($("#km-fuel")) $("#km-fuel").onclick = () => openFuel();
+  if ($("#km-crm")) $("#km-crm").onclick = () => pickGiroCrm();
+}
+/* ---------- giro visite dal CRM (PDF «Paesi e clienti …» arrivato per mail o salvato in File) ---------- */
+function pickGiroCrm(back) {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "application/pdf,.pdf"; inp.style.display = "none";
+  document.body.appendChild(inp);
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; inp.remove();
+    if (!f) return;
+    try { openGiroCrm(await leggiGiroCrm(f), back); }
+    catch (e) { alert(e.message); }
+  };
+  inp.click();
+}
+function openGiroCrm(giro, back) {
+  const have = {}; kmRows().forEach(r => { if (r.kind === "giorno") have[r.day] = r; });
+  const list = (label, arr) => `<div style="font-size:14px;margin:2px 0"><span class="muted">${label}</span> ${arr.length ? esc(arr.join(", ")) : "—"}</div>`;
+  const { sheet } = openSheet("Giro dal CRM", `
+    <p class="hint">Dal ${dayLabel(giro.from)} al ${dayLabel(giro.to)}: per ogni giorno scrivo <b>A</b> (paesi) e <b>Clienti</b>. Da, auto e km non cambiano: i km li scrivi tu la sera.</p>
+    ${giro.days.map(d => { const e = have[d.day], busy = e && (e.a || e.clients);
+      return `<div class="card" style="padding:12px 14px"><b>${dayLabel(d.day)}</b>
+        ${list("A:", d.towns)}${list("Clienti:", d.clients)}
+        ${busy ? `<div class="notice" style="font-size:13px;margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--bg2, #f3f1ec)">Già nell'app: <b>A</b> ${esc(e.a || "—")} · <b>Clienti</b> ${esc(e.clients || "—")}${kmEmpty(e) ? "" : ` · ${fmtKm(e.day_km)} km`}</div>
+          <div class="seg" style="margin-top:8px" data-day="${d.day}"><button type="button" data-r="1">Sostituisci</button><button type="button" class="on" data-r="0">Lascia com'è</button></div>`
+        : `<div class="muted" style="font-size:13px;margin-top:6px">${e ? "Giorno già inserito senza paesi e clienti: li aggiungo" : "Giorno nuovo: lo creo senza km"}</div>`}</div>`; }).join("")}`,
+    async () => {
+      const replace = new Set($$(".seg[data-day]", sheet).filter(x => $(".on", x).dataset.r === "1").map(x => x.dataset.day));
+      const r = await saveGiroCrm(giro, replace);
+      setTimeout(() => openKmWeek(mondayOf(giro.from)), 50);   // si vede subito la settimana del giro
+      return `Giro caricato: ${r.saved} ${r.saved === 1 ? "giorno" : "giorni"}${r.kept ? `, ${r.kept} lasciati com'erano` : ""}`;
+    }, { saveLabel: `Carica ${giro.days.length} ${giro.days.length === 1 ? "giorno" : "giorni"}` });
+  $$(".seg[data-day] button", sheet).forEach(b => b.onclick = () => { $$("button", b.parentNode).forEach(x => x.classList.toggle("on", x === b)); });
 }
 function tagField(id, label, values, suggestions, placeholder) {
   return `<label class="f"><span>${label}</span></label><div class="tags" id="${id}">${values.map(v => `<button type="button" class="tag" data-v="${esc(v)}">${esc(v)} ✕</button>`).join("")}
@@ -413,7 +447,7 @@ function openKm(kind, day, entry) {
     getA = bindTags(sheet, "km-a"); getC = bindTags(sheet, "km-c"); $("#km-copy", sheet).remove();
   };
   $("#km-d", sheet).onchange = () => { sheet.remove(); document.body.style.overflow = ""; openKm(kind, $("#km-d", sheet).value); };
-  if (!e) setTimeout(() => $("#km-o", sheet).focus(), 250);
+  if (!e || kmEmpty(e)) setTimeout(() => $("#km-o", sheet).focus(), 250);
 }
 function openFuel(f, back) {
   const { sheet } = openSheet(f ? "Rifornimento" : "Carburante carta aziendale", `
@@ -461,19 +495,21 @@ function openNotaSpese(month) {
 function openKmWeek(mon) {
   const w = kmWeek(mon), sun = addDays(mon, 6), fuel = fuelList().filter(f => f.day >= mon && f.day <= sun);
   const { sheet } = openSheet(`Settimana ${shortDate(mon)} – ${shortDate(sun)}`, `
-    <div class="seg" style="margin-bottom:12px"><button id="kw-prev">‹ Precedente</button><button id="kw-next" ${addDays(mon, 7) > todayIso() ? "disabled" : ""}>Successiva ›</button></div>
+    <div class="seg" style="margin-bottom:12px"><button id="kw-prev">‹ Precedente</button><button id="kw-next" ${addDays(mon, 7) > todayIso() && !rows("work_km").some(r => r.day >= addDays(mon, 7)) ? "disabled" : ""}>Successiva ›</button></div>
     <div class="card"><div class="pw-stats"><div><span>Km di lavoro</span><b class="num">${fmtKm(w.km)}</b></div>
       <div><span>Weekend</span><b class="num">${w.weekend ? fmtKm(w.weekend.private_km) : "—"}</b></div>
       <div><span>Contachilometri dom.</span><b class="num">${w.weekend ? fmtKm(w.weekend.odometer) : "—"}</b></div></div></div>
     <div class="card">${w.days.map(x => `<div class="row km-day" data-d="${x.day}"><span class="n"><b>${dayLabel(x.day)}</b><br>
       <span class="muted" style="font-size:12px">${x.entry ? `${esc(x.entry.a || "—")}${x.entry.clients ? " · " + esc(x.entry.clients) : ""}` : x.missing ? '<span class="out">da completare</span>' : "—"}</span></span>
-      <b class="num">${x.entry ? fmtKm(x.entry.day_km) + " km" : ""}</b><span class="muted" style="margin-left:6px">›</span></div>`).join("")}
+      <b class="num">${x.entry ? (x.planned ? `<span class="${x.missing ? "out" : "muted"}" style="font-size:12px;font-weight:500">km da scrivere</span>` : fmtKm(x.entry.day_km) + " km") : ""}</b><span class="muted" style="margin-left:6px">›</span></div>`).join("")}
       <div class="row km-day" data-we="1"><span class="n"><b>Weekend</b><br><span class="muted" style="font-size:12px">${w.weekend ? `contachilometri ${fmtKm(w.weekend.odometer)}` : sun < todayIso() ? '<span class="out">da completare</span>' : "domenica sera"}</span></span>
         <b class="num">${w.weekend ? fmtKm(w.weekend.private_km) + " km" : ""}</b><span class="muted" style="margin-left:6px">›</span></div></div>
     ${fuel.length || canEdit() ? `<div class="card"><h2>⛽ Carburante carta aziendale</h2>${fuel.map(f => `<div class="row fu-it" data-fu="${f.id}"><span class="n">${dayLabel(f.day)}</span>
       <b class="num">${eur(f.amount)}</b><span class="muted" style="margin-left:6px">›</span></div>`).join("") || `<p class="muted" style="margin:0">Nessun rifornimento questa settimana.</p>`}
       ${canEdit() ? `<button class="btn link" id="kw-fuel" style="margin-top:6px">+ Aggiungi rifornimento</button>` : ""}</div>` : ""}
+    ${canEdit() ? `<button class="btn wide" id="kw-crm" style="margin-bottom:8px">Carica paesi e clienti dal CRM</button>` : ""}
     <button class="btn primary wide" id="kw-xls" style="margin-top:4px">📎 Nota spese Excel</button>`);
+  if ($("#kw-crm", sheet)) $("#kw-crm", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = ""; pickGiroCrm(() => openKmWeek(mon)); };
   $$(".km-day", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); el.dataset.we ? openKm("weekend", sun) : openKm("giorno", el.dataset.d); });
   $("#kw-xls", sheet).onclick = () => { sheet.remove(); openNotaSpese(addDays(mon, 3).slice(0, 7)); };
   const back = () => openKmWeek(mon);

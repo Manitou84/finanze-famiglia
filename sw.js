@@ -1,6 +1,6 @@
 /* Finanze di Famiglia — rende la web app apribile anche senza rete.
    I dati non passano di qui: vanno a Supabase e restano nel telefono. */
-const CACHE = "finanze-v27";
+const CACHE = "finanze-v28";
 const FILES = ["./", "index.html", "style.css", "app.js", "dati.js", "scontrino.js", "jszip.min.js", "config.js", "regole_predefinite.json",
   "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 self.addEventListener("install", e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
