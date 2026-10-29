@@ -250,4 +250,3 @@ details summary { color: var(--accent); font-size: 13px; margin: 8px 0 4px; curs
 .duo .km-head .muted { flex: none; }
 .duo .km-btns { grid-template-columns: 1fr; gap: 6px; margin-top: 8px; }
 .duo .btn.sm { padding: 7px 8px; font-size: 13.5px; }
-.km-crm { font-size: 12px; padding: 6px 0 0; align-self: flex-end; text-align: right; }

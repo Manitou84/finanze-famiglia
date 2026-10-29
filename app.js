@@ -353,8 +353,7 @@ function homeKmCard() {
     : `<button class="btn sm" id="km-today">Segna km</button>`;
   return `<div class="card km-w km-mini"><div class="km-head"><b>Km lavoro</b>
       <button class="btn link sm" id="km-week">sett. ${fmtKm(wk.km)} km${miss ? ` · <span class="out">${miss} da fare</span>` : ""} ›</button></div>
-    <div class="km-btns">${main}${canEdit() ? `<button class="btn sm" id="km-fuel">+ Carburante</button>` : ""}</div>
-    ${canEdit() ? `<button class="btn link sm km-crm" id="km-crm">Carica paesi e clienti dal CRM</button>` : ""}</div>`;
+    <div class="km-btns">${main}${canEdit() ? `<button class="btn sm" id="km-fuel">+ Carburante</button><button class="btn sm" id="km-crm" aria-label="Carica paesi e clienti dal CRM">Carica dal CRM</button>` : ""}</div></div>`;
 }
 function bindHomeKm() {
   if ($("#km-today")) $("#km-today").onclick = () => openKm("giorno");
