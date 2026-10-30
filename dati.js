@@ -1322,3 +1322,28 @@ async function buildNotaSpese(month) {
   const blob = await out.generateAsync({ type: "blob", compression: "DEFLATE", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   return { ...d, blob };
 }
+
+/* ---------- promemoria di caricamento (stesse regole del Mac: api_altro.py upload_reminders) ----------
+   estratto conto: più di 15 giorni dall'ultima importazione; bollette della luce: l'ultima caricata finisce più di 3 mesi fa.
+   Si caricano dal Mac: qui è solo un promemoria. */
+function uploadReminders() {
+  const get = (k, def) => { const r = DB.t.app_settings[DB.hh + "|" + k]; try { const v = JSON.parse(r && r.value || "null"); return Array.isArray(v) ? v : def; } catch (e) { return def; } };
+  const out = [], t = todayIso(), MESI_R = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+  const hist = get("import_history", []).filter(h => h && /^\d{4}-\d{2}-\d{2}$/.test(h.at || "")).sort((a, b) => a.at.localeCompare(b.at));
+  // solo per chi si occupa dei caricamenti (chi ha fatto l'ultimo import), non per il resto della famiglia
+  const owner = hist.length ? hist[hist.length - 1].by : null, me = DB.members[uid()] || DB.email;
+  if (owner && owner !== me) return [];
+  if (!hist.length && !kmMine()) return [];
+  const last = hist.length ? hist[hist.length - 1].at : null;
+  if (!last) out.push({ lv: "30", text: "Carica l'estratto conto della banca sul Mac: non è ancora mai stato importato" });
+  else { const days = Math.round((new Date(t + "T12:00:00") - new Date(last + "T12:00:00")) / 864e5);
+    if (days > 15) out.push({ lv: days > 30 ? "15" : "30", text: `Carica i movimenti della banca sul Mac: l'ultima importazione è di ${days} giorni fa` }); }
+  const EL = ["Energia elettrica", "Energia elettrica e gas", "Luce", "Luce e gas"];
+  const ends = get("bill_docs", []).filter(d => d && EL.includes(d.type)).map(d => d.to || (d.month ? d.month + "-28" : null) || d.issued).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x || "")).sort();
+  const lim = new Date(t + "T12:00:00"); lim.setMonth(lim.getMonth() - 3); const limIso = isoDate(lim);
+  if (!ends.length) out.push({ lv: "30", text: "Carica le bollette della luce (PDF) sul Mac: non ce n'è ancora nessuna" });
+  else if (ends[ends.length - 1] < limIso) { const e = new Date(ends[ends.length - 1] + "T12:00:00");
+    out.push({ lv: "30", text: `Carica le bollette della luce sul Mac: l'ultima caricata arriva a ${MESI_R[e.getMonth()]} ${e.getFullYear()}` }); }
+  return out;
+}
+

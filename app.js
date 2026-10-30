@@ -179,6 +179,7 @@ function viewHome() {
   const sumIO = Math.max(d.income, d.expense) || 1;
   const dl = autoDeadlines();
   $("#view").innerHTML = `
+    ${isNow ? uploadReminders().map(x => `<div class="card alert ${x.lv === "30" ? "wait" : "late"}"><b>Promemoria</b> ${esc(x.text)}</div>`).join("") : ""}
     ${dl.filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}"><b>${esc(x.label)} ${esc(x.vehicle)}</b>
       ${x.days < 0 ? `scaduto il ${shortDate(x.due)}` : x.days === 0 ? "scade oggi" : `scade il ${shortDate(x.due)}, tra ${x.days} ${x.days === 1 ? "giorno" : "giorni"}`}</div>`).join("")}
     ${familyDeadlines().filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}" data-gofam><b>${esc(x.label)}${x.person !== "Famiglia" ? " di " + esc(x.person) : ""}</b>
