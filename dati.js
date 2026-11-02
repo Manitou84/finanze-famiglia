@@ -1267,9 +1267,10 @@ function notaSpeseData(month) {
       if (ab) { cells["E" + r] = ab.toUpperCase(); cells["L" + r] = ab.toUpperCase(); return; }
       cells["B" + r] = e.da || ""; cells["E" + r] = e.a || ""; if (e.day_km != null) cells["H" + r] = e.day_km;
       cells["J" + r] = e.car || ""; cells["L" + r] = e.clients || ""; });
-    // «Kilometri sett TOT»: tutta la settimana, compreso il weekend e i km fatti in ferie (come sul Mac)
+    // casella gialla «Kilometri totali» (I23): tutta la settimana, compreso il weekend e i km fatti in ferie (come sul Mac);
+    // «Kilometri sett TOT» (I37 = I23 nel modello) riporta lo stesso numero
     const offKm = w.days.reduce((a, x) => a + (x.entry && kmAbsence(x.entry) ? x.entry.private_km || 0 : 0), 0);
-    cells.I37 = round1(w.km + (w.weekend && w.weekend.private_km ? w.weekend.private_km : 0) + offKm);
+    cells.I23 = round1(w.km + (w.weekend && w.weekend.private_km ? w.weekend.private_km : 0) + offKm);
     return [String(iw.week), cells];
   });
   const safe = name.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase()).replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
@@ -1283,7 +1284,8 @@ function nsFormulaValues(cells) {
   for (let r = 9; r <= 20; r++) out["Q" + r] = r === 14 ? num("Q14") : round2(NS_DC.reduce((a, c) => a + num(c + r), 0));
   NS_DC.forEach(c => { let t = 0; for (let r = 9; r <= 20; r++) t += num(c + r); out[c + "21"] = round2(t); });
   let q = 0; for (let r = 9; r <= 20; r++) q += out["Q" + r]; out.Q21 = round2(q);
-  out.I23 = round1([26, 28, 30, 32, 34].reduce((a, r) => a + num("H" + r), 0));
+  out.I23 = "I23" in cells ? num("I23") : round1([26, 28, 30, 32, 34].reduce((a, r) => a + num("H" + r), 0));
+  out.I37 = out.I23;
   out.E39 = out.E41 = out.Q21; if (out.Q21 > 0) out.E43 = out.Q21;
   return out;
 }
