@@ -179,6 +179,7 @@ function viewHome() {
   const sumIO = Math.max(d.income, d.expense) || 1;
   const dl = autoDeadlines();
   $("#view").innerHTML = `
+    ${isNow && medsOwner() ? pollenHigh().slice(0, 1).map(p => `<div class="card alert ${p.level === "molto alto" ? "late" : "wait"}" id="pol-al"><b>Graminacee ${p.level === "molto alto" ? "molto alte" : "alte"} ${p.day === todayIso() ? "oggi" : p.day === addDays(todayIso(), 1) ? "domani" : dayLabel(p.day)}</b> ${Math.round(p.v)} granuli/m³${pollenHigh().length > 1 ? " e nei giorni dopo" : ""}: tieni a portata la terapia ›</div>`).join("") : ""}
     ${isNow ? uploadReminders().map(x => `<div class="card alert ${x.lv === "30" ? "wait" : "late"}"><b>Promemoria</b> ${esc(x.text)}</div>`).join("") : ""}
     ${dl.filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}"><b>${esc(x.label)} ${esc(x.vehicle)}</b>
       ${x.days < 0 ? `scaduto il ${shortDate(x.due)}` : x.days === 0 ? "scade oggi" : `scade il ${shortDate(x.due)}, tra ${x.days} ${x.days === 1 ? "giorno" : "giorni"}`}</div>`).join("")}
@@ -193,6 +194,7 @@ function viewHome() {
     </div>
     ${(() => { const km = S.month === thisMonth() ? homeKmCard() : "", fc = homeForecastCard();
       return km && fc ? `<div class="duo">${fc}${km}</div>` : fc + km; })()}
+    ${homeMedsCard()}
     ${S.month === thisMonth() && new Date().getDate() <= 10 && !S.sumSeen ? homeSummaryCard() : ""}
     ${homeGoalsCard()}
 
@@ -229,7 +231,9 @@ function viewHome() {
       <button class="btn link" id="all-tx">Tutti i movimenti</button>` : `<p class="muted">Nessun movimento.</p>`}</div>`;
   $$("[data-gofam]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "scadenze"; render(); window.scrollTo(0, 0); });
   if ($("#fc-open")) $("#fc-open").onclick = openForecast;
-  bindHomeKm();
+  bindHomeKm(); bindHomeMeds();
+  if ($("#pol-al")) $("#pol-al").onclick = () => medsGate(() => openMeds("cal"));
+  pollenRefresh();
   if ($("#sum-hide")) $("#sum-hide").onclick = e => { e.stopPropagation(); S.sumSeen = true; render(); };
   if (canEdit()) $$("[data-acc]").forEach(el => el.onclick = () => openBalanceW(el.dataset.acc));
   $$("[data-goal]").forEach(el => el.onclick = () => openGoalW(el.dataset.goal));
@@ -357,6 +361,138 @@ function homeKmCard() {
       <button class="btn link sm" id="km-week">sett. ${fmtKm(wk.km)} km${miss ? ` · <span class="out">${miss} da fare</span>` : ""} ›</button></div>
     <div class="km-btns">${main}${canEdit() ? `<button class="btn sm" id="km-fuel">+ Carburante</button><button class="btn sm" id="km-crm" aria-label="Carica paesi e clienti dal CRM">Carica dal CRM</button>` : ""}</div></div>`;
 }
+/* ==========================================================================
+   Pastiglie (solo per l'account di chi tiene i km; dati cifrati con la sua password)
+   ========================================================================== */
+const QTY_LABEL = { 0.25: "¼", 0.5: "½", 0.75: "¾", 1: "1", 1.5: "1½", 2: "2", 3: "3" };
+const qtyText = q => QTY_LABEL[q] || String(q).replace(".", ",");
+const doseText = (x, m) => `${qtyText(x.qty)} ${m && m.unit === "spruzzi" ? (x.qty === 1 ? "spruzzo" : "spruzzi") : x.qty > 1 ? "pastiglie" : "pastiglia"}${m && m.strength && m.unit !== "spruzzi" ? ` · ${fmtKm(x.qty * m.strength)} ${m.unit}` : ""}`;
+function homeMedsCard() {
+  if (!medsOwner() || !canEdit()) return "";
+  return `<div class="card km-mini meds-mini"><div class="km-head"><b>Pastiglie</b><button class="btn link sm" id="md-open">calendario e grafici ›</button></div>
+    <div class="muted" id="md-today" style="font-size:13px;margin-top:4px">Protette dalla tua password</div>
+    <div class="km-btns" style="grid-template-columns:1fr"><button class="btn primary sm" id="md-take">Ho preso una pastiglia</button></div></div>`;
+}
+async function bindHomeMeds() {
+  if (!$("#md-take")) return;
+  $("#md-take").onclick = () => medsGate(() => openDose());
+  $("#md-open").onclick = () => medsGate(() => openMeds("oggi"));
+  try { const st = await medsStatus(); if (!st.unlocked || !$("#md-today")) return;
+    const t = todayIso(), meds = await medsList(), xs = (await medsDoses(t.slice(0, 7))).filter(x => x.at.startsWith(t));
+    $("#md-today").textContent = xs.length ? "Oggi: " + xs.map(x => `${(meds.find(m => m.id === x.med_id) || {}).name || "?"} ${qtyText(x.qty)} alle ${x.at.slice(11)}`).join(", ") : "Oggi niente";
+  } catch (e) { }
+}
+/* prima di aprire: password da creare o da inserire (una volta per telefono) */
+async function medsGate(next) {
+  const st = await medsStatus();
+  if (st.unlocked) return next();
+  const { sheet } = openSheet(st.setup ? "Pastiglie" : "Proteggi le pastiglie", st.setup ? `
+      <p class="hint">Scrivi la password delle pastiglie. Su questo telefono te la chiedo una volta sola.</p>
+      <label class="f"><span>Password</span><input type="password" id="mp-1" autocomplete="current-password"></label>` : `
+      <p class="hint">Le pastiglie si salvano <b>cifrate</b>: online sono illeggibili, le vedi solo tu con questa password (sul Mac e sull'iPhone).
+        <b>Se la dimentichi non si possono recuperare</b>: scrivila in un posto sicuro (es. Portachiavi o Note bloccata).</p>
+      <label class="f"><span>Nuova password (almeno 8 caratteri)</span><input type="password" id="mp-1" autocomplete="new-password"></label>
+      <label class="f"><span>Ripetila</span><input type="password" id="mp-2" autocomplete="new-password"></label>`,
+    async () => {
+      const a = $("#mp-1", sheet).value;
+      if (st.setup) await medsUnlock(a);
+      else { if (a !== $("#mp-2", sheet).value) throw new Error("Le due password non sono uguali"); await medsSetup(a); }
+      setTimeout(next, 60); return st.setup ? "" : "Password creata";
+    }, { saveLabel: st.setup ? "Apri" : "Crea password" });
+  setTimeout(() => $("#mp-1", sheet).focus(), 250);
+}
+async function openDose(x, back) {
+  const meds = (await medsList()).filter(m => m.active !== false || (x && m.id === x.med_id));
+  if (!meds.length) return openMed(null, () => openDose(x, back));
+  const now = new Date(), at = x ? x.at : `${todayIso()}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  let med = x && meds.some(m => m.id === x.med_id) ? x.med_id : meds[0].id, qty = x ? x.qty : 1;
+  const ex = x && x.id ? x : null;   // assunzione già salvata (si modifica) o nuova
+  const { sheet } = openSheet(ex ? "Modifica" : "Ho preso", `
+    <label class="f"><span>Cosa</span></label><div class="chips" id="dz-m">${meds.map(m => `<button type="button" data-m="${m.id}" class="${m.id === med ? "on" : ""}"><span class="dot" style="background:${m.color}"></span>${esc(m.name)}${m.strength ? ` ${fmtKm(m.strength)} ${m.unit}` : ""}</button>`).join("")}</div>
+    <label class="f"><span>Quanto</span></label><div class="seg" id="dz-q">${[0.25, 0.5, 0.75, 1, 2].map(q => `<button type="button" data-q="${q}" class="${q === qty ? "on" : ""}">${qtyText(q)}</button>`).join("")}</div>
+    <p class="hint" id="dz-h" style="margin-top:6px"></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="f"><span>Giorno</span><input type="date" id="dz-d" value="${at.slice(0, 10)}"></label>
+      <label class="f"><span>Ora</span><input type="time" id="dz-t" value="${at.slice(11)}"></label></div>
+    <label class="f"><span>Nota (facoltativa)</span><input type="text" id="dz-n" value="${esc(x ? x.note || "" : "")}" placeholder="es. dopo cena, mal di testa"></label>
+    <button class="btn link" id="dz-new">+ Nuovo farmaco</button>`,
+    async () => { await medsSaveDose({ id: ex && ex.id, old_at: ex && ex.at, med_id: med, qty, at: `${$("#dz-d", sheet).value}T${$("#dz-t", sheet).value}`, note: $("#dz-n", sheet).value });
+      if (back) setTimeout(back, 60); return "Segnata"; },
+    ex ? { saveLabel: "Salva", del: { label: "Elimina", confirm: "Eliminare questa assunzione?", run: async () => { await medsDeleteDose(ex.id, ex.at); if (back) setTimeout(back, 60); return "Eliminata"; } } } : { saveLabel: "Segna" });
+  const hint = () => { const m = meds.find(z => z.id === med); $("#dz-h", sheet).textContent = doseText({ qty }, m); };
+  $$("#dz-m [data-m]", sheet).forEach(b => b.onclick = () => { med = b.dataset.m; $$("#dz-m button", sheet).forEach(z => z.classList.toggle("on", z === b)); hint(); });
+  $$("#dz-q [data-q]", sheet).forEach(b => b.onclick = () => { qty = +b.dataset.q; $$("#dz-q button", sheet).forEach(z => z.classList.toggle("on", z === b)); hint(); });
+  $("#dz-new", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = ""; openMed(null, () => openDose(x, back)); };
+  hint();
+}
+async function openMed(m, back) {
+  const { sheet } = openSheet(m ? "Farmaco" : "Nuovo farmaco", `
+    <label class="f"><span>Nome</span><input type="text" id="mf-n" value="${esc(m ? m.name : "")}" placeholder="es. Aerius"></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="f"><span>Dosaggio di una pastiglia</span><input type="text" inputmode="decimal" id="mf-s" value="${m && m.strength != null ? String(m.strength).replace(".", ",") : ""}" placeholder="es. 5"></label>
+      <label class="f"><span>Unità</span><select id="mf-u">${MED_UNITS.map(u => `<option ${m ? (m.unit === u ? "selected" : "") : u === "mg" ? "selected" : ""}>${u}</option>`).join("")}</select></label></div>
+    <label class="f"><span>Note</span><input type="text" id="mf-x" value="${esc(m ? m.notes || "" : "")}" placeholder="es. al bisogno, 1 al giorno"></label>
+    ${m ? `<label class="chk"><input type="checkbox" id="mf-a" ${m.active !== false ? "checked" : ""}> Lo prendo ancora (se tolto non compare tra le scelte)</label>` : ""}`,
+    async () => { await medsSaveMed({ id: m && m.id, name: $("#mf-n", sheet).value, strength: $("#mf-s", sheet).value, unit: $("#mf-u", sheet).value, notes: $("#mf-x", sheet).value, active: $("#mf-a", sheet) ? $("#mf-a", sheet).checked : true });
+      if (back) setTimeout(back, 60); return "Salvato"; });
+  setTimeout(() => !m && $("#mf-n", sheet).focus(), 250);
+}
+async function openMeds(tab, opts = {}) {
+  S.medTab = tab || S.medTab || "oggi"; S.medMonth = opts.month || S.medMonth || todayIso().slice(0, 7); S.medPeriod = S.medPeriod || "mese";
+  const st = await medsStats(S.medMonth, S.medPeriod, S.medFilter || null), meds = st.meds;
+  const reopen = (t, o) => () => openMeds(t, o);
+  const tabs = `<div class="seg" id="md-tabs" style="margin-bottom:12px">${[["oggi", "Oggi"], ["cal", "Calendario"], ["graf", "Grafici"], ["farm", "Farmaci"]].map(([k, l]) => `<button data-t="${k}" class="${S.medTab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  let body = "";
+  const t = todayIso();
+  if (S.medTab === "oggi") {
+    const xs = (st.calendar[t] || []).sort((a, b) => a.at.localeCompare(b.at));
+    const recent = []; for (let i = 1; i <= 6; i++) { const d = addDays(t, -i); if (d.slice(0, 7) === S.medMonth || true) recent.push(d); }
+    body = `<div class="card"><h2>Oggi</h2>${xs.length ? xs.map(x => `<div class="row md-x" data-x="${x.id}" data-at="${x.at}"><span class="n"><span class="dot" style="background:${x.color}"></span> <b>${esc(x.name)}</b> <span class="muted">${doseText(x, x)}</span></span><span class="muted">${x.at.slice(11)} ›</span></div>`).join("") : `<p class="muted" style="margin:0">Ancora niente oggi.</p>`}</div>
+      <button class="btn primary wide" id="md-add">Ho preso una pastiglia</button>`;
+  } else if (S.medTab === "cal") {
+    const first = S.medMonth + "-01", start = mondayOf(first), last = addDays(medAddMonths(S.medMonth, 1) + "-01", -1);
+    let cells = ""; for (let d = start; d <= last || new Date(d + "T12:00:00").getDay() !== 1; d = addDays(d, 1)) {
+      const xs = st.calendar[d] || [], inM = d.slice(0, 7) === S.medMonth;
+      const pl = st.pollen[d], lv = pl != null ? polLevel(pl) : null;
+      cells += `<button class="md-day ${inM ? "" : "out"} ${d === t ? "today" : ""} ${S.medDay === d ? "sel" : ""} ${lv && inM ? "pl-" + lv.replace(" ", "") : ""}" data-d="${d}" ${inM ? "" : "disabled"}><span>${+d.slice(8)}</span><i>${xs.slice(0, 4).map(x => `<b style="background:${x.color}"></b>`).join("")}</i></button>`; }
+    const sel = S.medDay && S.medDay.slice(0, 7) === S.medMonth ? S.medDay : null, xs = sel ? (st.calendar[sel] || []) : [];
+    body = `<div class="card"><div class="km-head"><button class="btn link" id="md-pm">‹</button><b>${monthName(S.medMonth)}</b><button class="btn link" id="md-nm">›</button></div>
+      <div class="md-cal">${["L", "M", "M", "G", "V", "S", "D"].map(x => `<span class="h">${x}</span>`).join("")}${cells}</div>
+      ${Object.keys(st.pollen).some(d => d.startsWith(S.medMonth)) ? `<p class="muted" style="font-size:12px;margin:8px 0 0">Bordo colorato = graminacee: <i class="md-lg pl-medio"></i> medie <i class="md-lg pl-alto"></i> alte <i class="md-lg pl-moltoalto"></i> molto alte</p>` : `<p class="muted" style="font-size:12px;margin:8px 0 0">Graminacee: i livelli compaiono nella stagione dei pollini.</p>`}</div>
+      ${sel ? `<div class="card"><h2>${dayLabel(sel)}</h2>${xs.length ? xs.map(x => `<div class="row md-x" data-x="${x.id}" data-at="${x.at}"><span class="n"><span class="dot" style="background:${x.color}"></span> <b>${esc(x.name)}</b> <span class="muted">${doseText(x, x)}</span></span><span class="muted">${x.at.slice(11)} ›</span></div>`).join("") : `<p class="muted" style="margin:0">Niente in questo giorno.</p>`}
+        <button class="btn link" id="md-addday" style="margin-top:6px">+ Aggiungi in questo giorno</button></div>` : `<p class="hint">Tocca un giorno per vedere cosa hai preso.</p>`}`;
+  } else if (S.medTab === "graf") {
+    const mx = Math.max(1, ...st.series.map(x => Math.max(x.now, x.prev)));
+    body = `<div class="seg" id="md-per" style="margin-bottom:10px">${[["settimana", "Settimana"], ["mese", "Mese"], ["anno", "Anno"]].map(([k, l]) => `<button data-p="${k}" class="${S.medPeriod === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <select id="md-f" style="margin-bottom:10px"><option value="">Tutti i farmaci (numero di dosi)</option>${meds.map(m => `<option value="${m.id}" ${S.medFilter === m.id ? "selected" : ""}>${esc(m.name)}${m.strength ? ` (in ${m.unit})` : ""}</option>`).join("")}</select>
+      ${S.medPeriod !== "settimana" ? `<div class="km-head" style="margin-bottom:6px"><button class="btn link" id="md-pm">‹</button><b>${S.medPeriod === "anno" ? S.medMonth.slice(0, 4) : monthName(S.medMonth)}</b><button class="btn link" id="md-nm">›</button></div>` : ""}
+      <div class="card"><div class="pw-stats"><div><span>${esc(st.names[0])}</span><b class="num">${fmtKm(st.total)}</b><span class="muted" style="font-size:12px">${esc(st.measure)}</span></div>
+        <div><span>${esc(st.names[1])}</span><b class="num">${fmtKm(st.prev_total)}</b><span class="muted" style="font-size:12px">${esc(st.measure)}</span></div>
+        <div><span>differenza</span><b class="num ${st.diff_pct > 0 ? "out" : st.diff_pct < 0 ? "in" : ""}">${st.diff_pct == null ? "—" : (st.diff_pct > 0 ? "+" : "") + st.diff_pct + "%"}</b><span class="muted" style="font-size:12px">${st.days} giorni</span></div></div>
+        <div class="md-chart">${st.series.map(x => `<div class="c"><div class="b"><i class="p" style="height:${x.prev / mx * 100}%"></i><i class="n" style="height:${x.now / mx * 100}%"></i></div><em class="pst ${x.pollen_level ? "pl-" + x.pollen_level.replace(" ", "") : ""}"></em><span>${x.label}</span></div>`).join("")}</div>
+        <p class="muted" style="font-size:12px;margin:6px 0 0"><i class="md-lg n"></i> ${esc(st.names[0])} &nbsp; <i class="md-lg p"></i> ${esc(st.names[1])} · striscia: graminacee</p></div>
+      ${st.per_med.length ? `<div class="card"><h2>Per farmaco</h2>${st.per_med.map(m => `<div class="row"><span class="n"><span class="dot" style="background:${m.color}"></span> ${esc(m.name)}<br><span class="muted" style="font-size:12px">${m.days} giorni${m.strength ? ` · ${fmtKm(m.pills * m.strength)} ${m.unit}` : ""}</span></span>
+        <span class="num"><b>${qtyText(m.pills)}</b> <span class="muted" style="font-size:12px">prima ${qtyText(m.prev_pills)}</span></span></div>`).join("")}</div>` : ""}`;
+  } else {
+    body = `<div class="card">${meds.length ? meds.map(m => `<div class="row md-m" data-m="${m.id}"><span class="n"><span class="dot" style="background:${m.color}"></span> <b>${esc(m.name)}</b> ${m.strength ? `<span class="muted">${fmtKm(m.strength)} ${m.unit}</span>` : ""}${m.active === false ? ' <span class="muted">· non più</span>' : ""}<br><span class="muted" style="font-size:12px">${esc(m.notes || "")}</span></span><span class="muted">›</span></div>`).join("") : `<p class="muted" style="margin:0">Nessun farmaco.</p>`}</div>
+      <button class="btn wide" id="md-newmed">+ Nuovo farmaco</button>
+      <button class="btn link wide" id="md-lock" style="margin-top:10px">Chiudi a chiave su questo telefono</button>`;
+  }
+  const { sheet } = openSheet("Pastiglie", tabs + body);
+  const go = (fn) => () => { sheet.remove(); document.body.style.overflow = ""; fn(); };
+  $$("#md-tabs [data-t]", sheet).forEach(b => b.onclick = go(() => openMeds(b.dataset.t)));
+  $$(".md-x", sheet).forEach(el => el.onclick = go(async () => { const ym = el.dataset.at.slice(0, 7); const x = (await medsDoses(ym)).find(z => z.id === el.dataset.x); if (x) openDose(x, reopen(S.medTab)); }));
+  if ($("#md-add", sheet)) $("#md-add", sheet).onclick = go(() => openDose(null, reopen("oggi")));
+  if ($("#md-addday", sheet)) $("#md-addday", sheet).onclick = go(() => openDose({ at: S.medDay + "T08:00", qty: 1, med_id: (meds.find(m => m.active !== false) || {}).id, isNew: true }, reopen("cal")));
+  $$(".md-day[data-d]", sheet).forEach(b => b.onclick = go(() => { S.medDay = b.dataset.d; openMeds("cal"); }));
+  const step = S.medPeriod === "anno" && S.medTab === "graf" ? 12 : 1;
+  if ($("#md-pm", sheet)) $("#md-pm", sheet).onclick = go(() => openMeds(S.medTab, { month: medAddMonths(S.medMonth, -step) }));
+  if ($("#md-nm", sheet)) $("#md-nm", sheet).onclick = go(() => openMeds(S.medTab, { month: medAddMonths(S.medMonth, step) }));
+  $$("#md-per [data-p]", sheet).forEach(b => b.onclick = go(() => { S.medPeriod = b.dataset.p; openMeds("graf"); }));
+  if ($("#md-f", sheet)) $("#md-f", sheet).onchange = go(() => { S.medFilter = $("#md-f", sheet).value || null; openMeds("graf"); });
+  $$(".md-m", sheet).forEach(el => el.onclick = go(() => openMed(meds.find(m => m.id === el.dataset.m), reopen("farm"))));
+  if ($("#md-newmed", sheet)) $("#md-newmed", sheet).onclick = go(() => openMed(null, reopen("farm")));
+  if ($("#md-lock", sheet)) $("#md-lock", sheet).onclick = go(async () => { await medsLock(); toast("Pastiglie chiuse: alla prossima apertura ti chiedo la password"); render(); });
+}
+
 function bindHomeKm() {
   if ($("#km-today")) $("#km-today").onclick = () => openKm("giorno");
   if ($("#km-we")) $("#km-we").onclick = () => openKm("weekend");

@@ -250,3 +250,28 @@ details summary { color: var(--accent); font-size: 13px; margin: 8px 0 4px; curs
 .duo .km-head .muted { flex: none; }
 .duo .km-btns { grid-template-columns: 1fr; gap: 6px; margin-top: 8px; }
 .duo .btn.sm { padding: 7px 8px; font-size: 13.5px; }
+/* pastiglie */
+.meds-mini { margin-top: 0; }
+.md-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 8px; }
+.md-cal .h { text-align: center; font-size: 11px; color: var(--muted); }
+.md-day { border: 0; background: var(--bg); border-radius: 10px; min-height: 46px; padding: 4px 2px; display: flex; flex-direction: column; align-items: center; gap: 3px; font: inherit; color: var(--text); }
+.md-day.out { opacity: .3; }
+.md-day.today { outline: 2px solid var(--accent); }
+.md-day.sel { background: var(--accent); color: #fff; }
+.md-day i { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
+.md-day i b { width: 6px; height: 6px; border-radius: 50%; display: block; }
+.md-chart { display: flex; align-items: flex-end; gap: 2px; height: 130px; margin-top: 14px; }
+.md-chart .c { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; height: 100%; }
+.md-chart .b { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 1px; }
+.md-chart .b i { width: 45%; max-width: 14px; border-radius: 3px 3px 0 0; display: block; }
+.md-chart i.n, .md-lg.n { background: var(--accent); }
+.md-chart i.p, .md-lg.p { background: var(--line); }
+.md-chart span { font-size: 9px; color: var(--muted); margin-top: 3px; }
+.md-lg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
+/* graminacee */
+.md-day.pl-medio { box-shadow: inset 0 -4px 0 #E3B341; }
+.md-day.pl-alto { box-shadow: inset 0 -4px 0 #D9534F; }
+.md-day.pl-moltoalto { box-shadow: inset 0 -4px 0 #8E1F1B; }
+.md-lg.pl-medio { background: #E3B341; } .md-lg.pl-alto { background: #D9534F; } .md-lg.pl-moltoalto { background: #8E1F1B; }
+.md-chart .pst { display: block; width: 80%; height: 3px; border-radius: 2px; margin-top: 2px; }
+.pst.pl-basso { background: #A7C796; } .pst.pl-medio { background: #E3B341; } .pst.pl-alto { background: #D9534F; } .pst.pl-moltoalto { background: #8E1F1B; }

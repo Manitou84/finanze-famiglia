@@ -1267,10 +1267,28 @@ function notaSpeseData(month) {
       if (ab) { cells["E" + r] = ab.toUpperCase(); cells["L" + r] = ab.toUpperCase(); return; }
       cells["B" + r] = e.da || ""; cells["E" + r] = e.a || ""; if (e.day_km != null) cells["H" + r] = e.day_km;
       cells["J" + r] = e.car || ""; cells["L" + r] = e.clients || ""; });
+    // «Kilometri sett TOT»: tutta la settimana, compreso il weekend e i km fatti in ferie (come sul Mac)
+    const offKm = w.days.reduce((a, x) => a + (x.entry && kmAbsence(x.entry) ? x.entry.private_km || 0 : 0), 0);
+    cells.I37 = round1(w.km + (w.weekend && w.weekend.private_km ? w.weekend.private_km : 0) + offKm);
     return [String(iw.week), cells];
   });
   const safe = name.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase()).replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
   return { sheets, totalKm: round1(totalKm), missing, fileName: `Nota_spese_${String(m).padStart(2, "0")}-${y}-${safe}.xlsx`, name };
+}
+/* risultati delle formule del modello calcolati qui (come sul Mac: api_km.formula_values): le anteprime di Mail e File non le ricalcolano */
+const NS_DC = ["C", "E", "G", "I", "K", "M", "O"];
+function nsFormulaValues(cells) {
+  const num = r => typeof cells[r] === "number" ? cells[r] : 0, out = {};
+  if (typeof cells.C8 === "number") { NS_DC.slice(1).forEach((c, k) => out[c + "8"] = cells.C8 + k + 1); out.A27 = cells.C8; [29, 31, 33, 35].forEach((r, k) => out["A" + r] = cells.C8 + k + 1); }
+  for (let r = 9; r <= 20; r++) out["Q" + r] = r === 14 ? num("Q14") : round2(NS_DC.reduce((a, c) => a + num(c + r), 0));
+  NS_DC.forEach(c => { let t = 0; for (let r = 9; r <= 20; r++) t += num(c + r); out[c + "21"] = round2(t); });
+  let q = 0; for (let r = 9; r <= 20; r++) q += out["Q" + r]; out.Q21 = round2(q);
+  out.I23 = round1([26, 28, 30, 32, 34].reduce((a, r) => a + num("H" + r), 0));
+  out.E39 = out.E41 = out.Q21; if (out.Q21 > 0) out.E43 = out.Q21;
+  return out;
+}
+function nsCache(xml, ref, value) {
+  return xml.replace(new RegExp(`(<c r="${ref}"[^>]*>)(<f[^>]*>[^<]*</f>|<f[^>]*/>)(?:<v>[^<]*</v>)?`), (m, a, f) => `${a}${f}<v>${+value.toPrecision(10)}</v>`);
 }
 const xmlEsc = v => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 function nsSetCell(xml, ref, value) {
@@ -1306,6 +1324,7 @@ async function buildNotaSpese(month) {
     let xml = i > 1 ? baseSheet.replace('tabSelected="true"', 'tabSelected="false"') : baseSheet;
     for (const [ref, val] of Object.entries(cells)) xml = nsSetCell(xml, ref, val);
     xml = xml.replace(/(<f[^>]*>[^<]*<\/f>)<v>[^<]*<\/v>/g, "$1");   // formule ricalcolate all'apertura
+    for (const [ref, val] of Object.entries(nsFormulaValues(cells))) if (!(ref in cells)) xml = nsCache(xml, ref, val);   // e risultati già pronti per le anteprime
     put(`xl/worksheets/sheet${i}.xml`, xml);
     put(`xl/worksheets/_rels/sheet${i}.xml.rels`, baseRels.replace("drawing1.xml", `drawing${i}.xml`));
     put(`xl/drawings/drawing${i}.xml`, drawing); put(`xl/drawings/_rels/drawing${i}.xml.rels`, drawingRels);
@@ -1347,3 +1366,151 @@ function uploadReminders() {
   return out;
 }
 
+
+/* ---------- pastiglie (stesse regole e stessa cifratura del Mac: api_pastiglie.py) ----------
+   Solo per chi tiene i km (Alberto). I dati vanno su Supabase CIFRATI con una password solo sua:
+   PBKDF2-SHA256 (310.000 giri) → AES-GCM 256 con Web Crypto. La chiave resta in questo telefono (IndexedDB, non esportabile). */
+const MEDS = { key: null, cache: {} }, MED_ITER = 310000;
+const MED_UNITS = ["mg", "mcg", "g", "ml", "gocce", "UI", "spruzzi", "compresse"];
+const MED_PALETTE = ["#2F5F8A", "#9A3F5C", "#2E5E4E", "#E3A73A", "#7F77DD", "#D85A30", "#1D9E75", "#BA7517"];
+const medK = s => `meds_${uid()}_${s}`;
+const medRow = s => DB.t.app_settings[DB.hh + "|" + medK(s)];
+const b64e = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192)); return btoa(s); };
+const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+function medsOwner() {
+  if (!DB || !DB.hh || !uid()) return false;
+  if (medRow("key")) return true;
+  const s = kmSettings(); return !!s.owner && s.owner === uid();
+}
+function medIdb(op, val) {
+  return new Promise(res => { try {
+    const rq = indexedDB.open("finanze-chiavi", 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore("k");
+    rq.onsuccess = () => { const tx = rq.result.transaction("k", op === "get" ? "readonly" : "readwrite"), st = tx.objectStore("k");
+      const r = op === "get" ? st.get("meds-" + uid()) : op === "del" ? st.delete("meds-" + uid()) : st.put(val, "meds-" + uid());
+      r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); };
+    rq.onerror = () => res(null);
+  } catch (e) { res(null); } });
+}
+async function medDerive(pw, salt, it) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: it, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+async function medEnc(obj, key) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key || MEDS.key, new TextEncoder().encode(JSON.stringify(obj))));
+  return JSON.stringify({ iv: b64e(iv), ct: b64e(ct) });
+}
+async function medDec(text, key) {
+  const o = JSON.parse(text);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64d(o.iv) }, key || MEDS.key, b64d(o.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+/* stato: { setup: password creata?, unlocked: chiave pronta? } */
+async function medsStatus() {
+  const h = medRow("key"); if (!h) return { setup: false, unlocked: false };
+  if (!MEDS.key) { const k = await medIdb("get"); if (k) MEDS.key = k; }
+  if (MEDS.key) { try { await medDec(JSON.parse(h.value).check); } catch (e) { MEDS.key = null; await medIdb("del"); } }
+  return { setup: true, unlocked: !!MEDS.key };
+}
+async function medsSetup(pw) {
+  guard(); if (medRow("key")) throw new Error("La password è già stata creata: inseriscila per aprire");
+  if ((pw || "").length < 8) throw new Error("Usa una password di almeno 8 caratteri");
+  const salt = crypto.getRandomValues(new Uint8Array(16)), key = await medDerive(pw, salt, MED_ITER);
+  write("app_settings", { key: medK("key"), value: JSON.stringify({ v: 1, salt: b64e(salt), it: MED_ITER, check: await medEnc({ ok: 1 }, key) }) });
+  MEDS.key = key; await medIdb("put", key);
+}
+async function medsUnlock(pw) {
+  const h = JSON.parse(medRow("key").value), key = await medDerive(pw || "", b64d(h.salt), h.it || MED_ITER);
+  try { await medDec(h.check, key); } catch (e) { throw new Error("Password sbagliata"); }
+  MEDS.key = key; await medIdb("put", key);
+}
+async function medsLock() { MEDS.key = null; MEDS.cache = {}; await medIdb("del"); }
+async function medRead(s, def) {
+  const r = medRow(s); if (!r || !r.value) return def;
+  const stamp = r.updated_at + "|" + r.version;
+  if (MEDS.cache[s] && MEDS.cache[s].stamp === stamp) return MEDS.cache[s].data;
+  const data = await medDec(r.value); MEDS.cache[s] = { stamp, data }; return data;
+}
+async function medSave(s, obj) { guard(); write("app_settings", { key: medK(s), value: await medEnc(obj) }); delete MEDS.cache[s]; }
+const MED_ID = /^[A-Za-z0-9-]{1,64}$/, MED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+async function medsList() { return ((await medRead("list", { meds: [] })).meds || []).filter(m => m && MED_ID.test(m.id)); }
+async function medsSaveMed(d) {
+  const meds = await medsList(), name = String(d.name || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!name) throw new Error("Scrivi il nome del farmaco");
+  const st = d.strength === "" || d.strength == null ? null : parseAmount(d.strength);
+  if (st != null && (isNaN(st) || st < 0)) throw new Error("Dosaggio non valido");
+  const id = MED_ID.test(d.id || "") ? d.id : uuid4(), old = meds.find(m => m.id === id);
+  const row = { id, name, strength: st || null, unit: MED_UNITS.includes(d.unit) ? d.unit : "mg", notes: String(d.notes || "").slice(0, 200),
+    active: d.active !== false, color: (old && old.color) || MED_PALETTE[meds.length % MED_PALETTE.length] };
+  await medSave("list", { meds: meds.filter(m => m.id !== id).concat(row) }); return id;
+}
+async function medsDoses(ym) { return ((await medRead(ym, { doses: [] })).doses || []).filter(x => x && MED_ID.test(x.id) && MED_AT.test(x.at)); }
+async function medsSaveDose(d) {
+  const meds = await medsList(); if (!meds.some(m => m.id === d.med_id)) throw new Error("Scegli il farmaco");
+  const at = String(d.at || "").slice(0, 16); if (!MED_AT.test(at)) throw new Error("Data e ora non valide");
+  const qty = typeof d.qty === "number" ? d.qty : parseAmount(d.qty); if (!(qty > 0 && qty <= 20)) throw new Error("Quantità non valida");
+  const id = MED_ID.test(d.id || "") ? d.id : uuid4();
+  if (d.old_at && MED_AT.test(d.old_at) && d.old_at.slice(0, 7) !== at.slice(0, 7))
+    await medSave(d.old_at.slice(0, 7), { doses: (await medsDoses(d.old_at.slice(0, 7))).filter(x => x.id !== id) });
+  const ds = (await medsDoses(at.slice(0, 7))).filter(x => x.id !== id);
+  ds.push({ id, med_id: d.med_id, at, qty, note: String(d.note || "").slice(0, 200) }); ds.sort((a, b) => a.at.localeCompare(b.at));
+  await medSave(at.slice(0, 7), { doses: ds }); return id;
+}
+async function medsDeleteDose(id, at) { await medSave(at.slice(0, 7), { doses: (await medsDoses(at.slice(0, 7))).filter(x => x.id !== id) }); }
+const medAddMonths = (ym, n) => { let y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + n; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; return `${y}-${String(m + 1).padStart(2, "0")}`; };
+/* grafico e confronto: period = settimana | mese | anno; medId = un farmaco (somma in mg/ml…) o tutti (numero di dosi) */
+async function medsStats(month, period, medId) {
+  const meds = await medsList(), med = meds.find(m => m.id === medId), cache = {};
+  const doses = async ym => cache[ym] || (cache[ym] = await medsDoses(ym));
+  const rng = async (a, b) => { let out = []; for (let ym = a.slice(0, 7); ym <= b.slice(0, 7); ym = medAddMonths(ym, 1)) out = out.concat((await doses(ym)).filter(x => x.at.slice(0, 10) >= a && x.at.slice(0, 10) <= b)); return out.filter(x => !medId || x.med_id === medId); };
+  const amt = xs => Math.round(xs.reduce((s, x) => s + x.qty, 0) * (med && med.strength ? med.strength : 1) * 100) / 100;
+  const t = todayIso(); let series = [], nowR, prevR, names;
+  if (period === "settimana") {
+    const mon = mondayOf(t), L = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+    for (let i = 0; i < 7; i++) { const d = addDays(mon, i), p = addDays(mon, i - 7); series.push({ label: L[i], now: amt(await rng(d, d)), prev: amt(await rng(p, p)) }); }
+    nowR = [mon, addDays(mon, 6)]; prevR = [addDays(mon, -7), addDays(mon, -1)]; names = ["questa settimana", "la settimana prima"];
+  } else if (period === "anno") {
+    const y = +month.slice(0, 4), L = ["G", "F", "M", "A", "M", "G", "L", "A", "S", "O", "N", "D"];
+    for (let m = 1; m <= 12; m++) { const a = `${y}-${String(m).padStart(2, "0")}`, b = `${y - 1}-${String(m).padStart(2, "0")}`;
+      series.push({ label: L[m - 1], now: amt(await rng(a + "-01", a + "-31")), prev: amt(await rng(b + "-01", b + "-31")) }); }
+    nowR = [`${y}-01-01`, `${y}-12-31`]; prevR = [`${y - 1}-01-01`, `${y - 1}-12-31`]; names = [String(y), String(y - 1)];
+  } else {
+    const first = month + "-01", pm = medAddMonths(month, -1), last = addDays(medAddMonths(month, 1) + "-01", -1), plast = addDays(first, -1);
+    for (let d = first, i = 0; d <= last; d = addDays(d, 1), i++) { const p = addDays(pm + "-01", i);
+      series.push({ label: String(+d.slice(8)), now: amt(await rng(d, d)), prev: p <= plast ? amt(await rng(p, p)) : 0 }); }
+    nowR = [first, last]; prevR = [pm + "-01", plast]; names = ["questo mese", "il mese prima"];
+  }
+  const nowX = await rng(...nowR), prevX = await rng(...prevR), tot = amt(nowX), ptot = amt(prevX);
+  const perMed = meds.map(m => { const xs = nowX.filter(x => x.med_id === m.id), ps = prevX.filter(x => x.med_id === m.id);
+    return xs.length || ps.length ? { ...m, pills: xs.reduce((s, x) => s + x.qty, 0), prev_pills: ps.reduce((s, x) => s + x.qty, 0), days: new Set(xs.map(x => x.at.slice(0, 10))).size } : null; }).filter(Boolean);
+  const pol = pollenData().days || {};
+  series.forEach((sr, i) => {
+    if (period === "anno") { const ym = `${month.slice(0, 4)}-${String(i + 1).padStart(2, "0")}`, vs = Object.entries(pol).filter(([d]) => d.startsWith(ym)).map(([, v]) => v);
+      sr.pollen = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; }
+    else sr.pollen = pol[period === "settimana" ? addDays(mondayOf(t), i) : addDays(month + "-01", i)] ?? null;
+    sr.pollen_level = polLevel(sr.pollen); });
+  const cal = {}; (await doses(month)).forEach(x => { const m = meds.find(z => z.id === x.med_id) || {}; (cal[x.at.slice(0, 10)] = cal[x.at.slice(0, 10)] || []).push({ ...x, name: m.name || "?", color: m.color || "#888", unit: m.unit, strength: m.strength }); });
+  return { meds, series, names, pollen: pol, total: tot, prev_total: ptot, diff_pct: ptot ? Math.round((tot - ptot) / ptot * 100) : null,
+    measure: med && med.strength ? med.unit : "dosi", days: new Set(nowX.map(x => x.at.slice(0, 10))).size, per_med: perMed, calendar: cal };
+}
+
+/* ---------- graminacee (stesse regole del Mac: api_pollini.py) ----------
+   Open-Meteo / Copernicus per San Martino di Lupari; media del giorno in granuli/m³. Si manda solo il punto. */
+const POL = { lat: 45.651, lon: 11.860 };
+const polLevel = v => v == null ? null : v >= 100 ? "molto alto" : v >= 30 ? "alto" : v >= 10 ? "medio" : "basso";
+function pollenData() { const r = DB.t.app_settings[DB.hh + "|pollen_grass"]; try { const v = JSON.parse(r && r.value || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; } }
+async function pollenRefresh() {
+  if (!medsOwner() || !navigator.onLine) return;
+  const cur = pollenData(); if (cur.at && Date.now() - new Date(cur.at) < 12 * 3600e3) return;
+  try {
+    const u = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${POL.lat}&longitude=${POL.lon}&hourly=grass_pollen&past_days=${cur.days ? 7 : 92}&forecast_days=5&timezone=Europe%2FRome`;
+    const j = await (await fetch(u)).json(), h = j.hourly || {}, by = {};
+    (h.time || []).forEach((t, i) => { const v = (h.grass_pollen || [])[i]; if (v != null) (by[t.slice(0, 10)] = by[t.slice(0, 10)] || []).push(+v); });
+    const days = Object.assign({}, cur.days || {});
+    Object.entries(by).forEach(([d, xs]) => { if (xs.length >= 12) days[d] = Math.round(xs.reduce((a, b) => a + b, 0) / xs.length * 10) / 10; });
+    const now = new Date(), stamp = `${isoDate(now)}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:00`;
+    write("app_settings", { key: "pollen_grass", value: JSON.stringify({ place: "San Martino di Lupari", at: stamp, days }) });
+  } catch (e) { }
+}
+function pollenHigh() { const t = todayIso(); return Object.entries(pollenData().days || {}).filter(([d, v]) => d >= t && v >= 30).sort().map(([d, v]) => ({ day: d, v, level: polLevel(v) })); }
