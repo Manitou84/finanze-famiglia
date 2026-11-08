@@ -126,6 +126,7 @@ function statusLine() {
 
 function render() {
   if (!$("#view")) return;
+  if (!S.keepKm && !document.querySelector(".sheet")) S.kmMode = false;   // uscito dal menu Km
   $$(".tabbar [data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === (S.view === "scadenze" ? "home" : S.view)));
   const withMonth = ["home", "movimenti", "scadenze"].includes(S.view);
   $("#mnav").style.display = withMonth ? "" : "none";
@@ -386,6 +387,7 @@ function kmQuickState() {
   return { todo: false, text: "a posto" };
 }
 function openKmHub() {
+  S.kmMode = true;
   const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
   const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
   const weE = rs.find(r => r.day === sun && r.kind === "weekend");
@@ -413,9 +415,11 @@ function openKmHub() {
       ${ed ? tile("kh-crm", ICON.crm, "Carica dal CRM", "paesi e clienti del giro") : ""}
       ${ed ? tile("kh-off", ICON.off, "Ferie, malattia", "o permesso") : ""}
       ${tile("kh-xls", ICON.xls, "Nota spese", "Excel da mandare o PDF da stampare", "wide")}
-    </div>`);
+    </div>
+    <button class="btn wide" id="kh-home" style="margin-top:16px">Torna al Riepilogo</button>`, null, { hub: true });
   const go = fn => () => { sheet.remove(); document.body.style.overflow = ""; fn(); };
-  const back = () => openKmHub();
+  const back = null;   // il ritorno al menu lo fa «‹ Indietro» (S.kmMode)
+  $("#kh-home", sheet).onclick = () => { S.kmMode = false; sheet.remove(); document.body.style.overflow = ""; render(); window.scrollTo(0, 0); };
   if ($("#kh-main", sheet)) $("#kh-main", sheet).onclick = go(() => weFirst ? openKm("weekend") : todayMissing ? openKm("giorno") : openKm("giorno", miss[0].day));
   if ($("#kh-today", sheet)) $("#kh-today", sheet).onclick = go(() => openKm("giorno"));
   if ($("#kh-we", sheet)) $("#kh-we", sheet).onclick = go(() => openKm("weekend"));
@@ -734,41 +738,69 @@ function openNotaSpese(month) {
   $("#ns-pdf", sheet).onclick = () => { const m = $("#ns-m", sheet).value; sheet.remove(); document.body.style.overflow = ""; openNsReview(m); };
   if (nsTemplate()) prepare(); else $$("#ns-send, #ns-dl", sheet).forEach(b => b.disabled = true);
 }
-/* revisione prima del PDF: ogni spesa con il suo scontrino */
-const nsChecks = () => { try { return JSON.parse(localStorage.getItem("finanze-ns-check") || "{}"); } catch (e) { return {}; } };
+/* revisione prima del PDF: una spesa alla volta, con lo scontrino in mano */
+const nsChecks = () => { try { const c = JSON.parse(localStorage.getItem("finanze-ns-check") || "{}"); for (const k in c) if (c[k] === 1) c[k] = "ok"; return c; } catch (e) { return {}; } };
 const nsSaveChecks = c => { try { localStorage.setItem("finanze-ns-check", JSON.stringify(c)); } catch (e) { } };
-function openNsReview(month) {
-  const r = nsReviewData(month), all = r.weeks.flatMap(w => w.items), ck = nsChecks();
-  const { sheet } = openSheet(`Controlla ${MESI[+month.slice(5) - 1]}`, `
-    <p class="hint">Tocca ogni spesa quando trovi lo scontrino: importo e giorno devono coincidere. Se qualcosa non torna, toccala a lungo per correggerla.</p>
-    ${r.missing.length ? `<div class="card alert wait"><b>Mancano i km di ${r.missing.length} ${r.missing.length === 1 ? "giorno" : "giorni"}</b>${r.missing.map(d => shortDate(d)).join(", ")}</div>` : ""}
-    ${r.weeks.map(w => `<div class="nsr-w"><div class="nsr-h"><b>Settimana ${w.week}</b><span>${shortDate(w.monday)} – ${shortDate(w.sunday)}</span><b class="num">${eur(w.total)}</b></div>
-      ${w.items.length ? w.items.map(x => `<button type="button" class="nsr-i ${ck[x.id] ? "ok" : ""}" data-ck="${esc(x.id)}" aria-pressed="${ck[x.id] ? "true" : "false"}">
-        <i aria-hidden="true"></i><span class="t"><b>${esc(x.desc)}</b><em>${dayLabel(x.day)} · ${esc(x.label)}</em></span><b class="num">${eur(x.amount)}</b></button>`).join("")
-        : `<p class="muted" style="margin:8px 0 2px;font-size:14px">Nessuna spesa in questa settimana.</p>`}</div>`).join("")}
-    <div class="nsr-sum"><span id="nsr-c"></span><b class="num">Totale ${eur(all.reduce((a, x) => a + x.amount, 0))}</b></div>
-    <button class="btn primary wide" id="nsr-go" disabled>Preparo il PDF…</button>`);
-  let pdf = null, sure = false;
-  const left = () => all.filter(x => !ck[x.id]).length;
-  const label = () => { const n = left(), b = $("#nsr-go", sheet); if (!b) return;
-    $("#nsr-c", sheet).innerHTML = all.length ? `Spuntate <b>${all.length - n}</b> di ${all.length}` : "Nessuna spesa nel mese";
-    if (pdf) { b.disabled = false; b.textContent = !n ? "Crea il PDF" : sure ? `Crea il PDF comunque` : `Crea il PDF (${n} da controllare)`; } };
-  buildNotaSpesePdf(month).then(x => { pdf = x; label(); }).catch(e => { $("#se", sheet).textContent = e.message; $("#nsr-go", sheet).textContent = "PDF non disponibile"; });
-  $$("[data-ck]", sheet).forEach(b => {
-    let t = null;
-    b.onclick = () => { if (b.dataset.long) { delete b.dataset.long; return; } const id = b.dataset.ck; if (ck[id]) delete ck[id]; else ck[id] = 1; nsSaveChecks(ck);
-      b.classList.toggle("ok", !!ck[id]); b.setAttribute("aria-pressed", ck[id] ? "true" : "false"); sure = false; label(); };
-    const tx = rows("transactions").find(z => z.id === b.dataset.ck);
-    if (tx && canEdit()) { b.addEventListener("touchstart", () => { t = setTimeout(() => { b.dataset.long = 1; sheet.remove(); document.body.style.overflow = ""; openTx(tx); }, 600); }, { passive: true });
-      ["touchend", "touchmove"].forEach(ev => b.addEventListener(ev, () => clearTimeout(t), { passive: true })); }
-  });
-  $("#nsr-go", sheet).onclick = () => { if (!pdf) return;
-    if (left() && !sure) { sure = true; label(); toast("Ci sono spese non spuntate: tocca di nuovo per creare il PDF lo stesso"); return; }
-    const f = new File([pdf.blob], pdf.fileName, { type: "application/pdf" });
-    if (navigator.canShare && navigator.canShare({ files: [f] }))
-      navigator.share({ files: [f], title: pdf.fileName }).catch(err => { if (err.name !== "AbortError") $("#se", sheet).textContent = "Non riesco ad aprire la condivisione: " + err.message; });
-    else { const a = document.createElement("a"); a.href = URL.createObjectURL(pdf.blob); a.download = pdf.fileName; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); } };
-  label();
+function openNsReview(month, startId) {
+  const r = nsReviewData(month), ck = nsChecks();
+  const items = r.weeks.flatMap(w => w.items.map(x => ({ ...x, week: w })));
+  const first = items.findIndex(x => !ck[x.id]);
+  let i = startId ? Math.max(0, items.findIndex(x => x.id === startId)) : first < 0 ? items.length : first;
+  let pdf = null, pdfErr = "";
+  const { sheet } = openSheet(`Nota spese di ${MESI[+month.slice(5) - 1]}`, `<div id="nsr"></div>`);
+  buildNotaSpesePdf(month).then(x => { pdf = x; if (i >= items.length) draw(); }).catch(e => { pdfErr = e.message; if (i >= items.length) draw(); });
+  const set = (x, v) => { if (v) ck[x.id] = v; else delete ck[x.id]; nsSaveChecks(ck); };
+  const box = () => $("#nsr", sheet);
+  const draw = () => {
+    if (!box()) return;
+    window.scrollTo(0, 0); sheet.scrollTop = 0;
+    if (i >= items.length) return summary();
+    const x = items[i], st = ck[x.id];
+    box().innerHTML = `
+      <div class="nsm-top"><span>Spesa <b>${i + 1}</b> di ${items.length}</span><span>Settimana ${x.week.week}</span></div>
+      <div class="nsm-bar"><div style="width:${(i / items.length * 100).toFixed(1)}%"></div></div>
+      <div class="nsm-card ${st || ""}">
+        <div class="nsm-day">${dayLabel(x.day).replace(/^./, c => c.toUpperCase())}</div>
+        <div class="nsm-amt num">${eur(x.amount)}</div>
+        <div class="nsm-desc">${esc(x.desc)}</div>
+        <div class="nsm-lbl">Nella nota spese: <b>${esc(x.label)}</b>${x.kind === "carta" ? "<br>pagato con la carta carburante" : ""}</div>
+        ${st ? `<div class="nsm-st">${st === "ok" ? "Scontrino controllato" : "Segnata: scontrino mancante"}</div>` : ""}
+      </div>
+      <button class="btn wide nsm-ok" id="nsm-ok">Scontrino ok</button>
+      <div class="nsm-row"><button class="btn" id="nsm-prev" ${i ? "" : "disabled"}>‹ Indietro</button><button class="btn" id="nsm-miss">Manca</button>${canEdit() ? `<button class="btn" id="nsm-fix">Correggi</button>` : ""}</div>
+      <button class="btn link wide" id="nsm-end" style="margin-top:6px">Vai al riepilogo ›</button>`;
+    $("#nsm-ok", sheet).onclick = () => { set(x, "ok"); i++; draw(); };
+    $("#nsm-miss", sheet).onclick = () => { set(x, "manca"); i++; draw(); };
+    $("#nsm-prev", sheet).onclick = () => { i = Math.max(0, i - 1); draw(); };
+    $("#nsm-end", sheet).onclick = () => { i = items.length; draw(); };
+    if ($("#nsm-fix", sheet)) $("#nsm-fix", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = "";
+      if (x.kind === "carta") { const f = fuelList().find(z => "fuel:" + z.id === x.id); return openFuel(f, () => openNsReview(month, x.id)); }
+      const t = rows("transactions").find(z => z.id === x.id); if (t) openTx(t); };
+  };
+  const summary = () => {
+    const ok = items.filter(x => ck[x.id] === "ok"), miss = items.filter(x => ck[x.id] === "manca"), todo = items.filter(x => !ck[x.id]);
+    const line = x => `<button class="nsm-ln" data-go="${esc(x.id)}"><span class="d">${shortDate(x.day)}</span><span class="t">${esc(x.desc)}</span><b class="num">${eur(x.amount)}</b></button>`;
+    box().innerHTML = `
+      ${r.missing.length ? `<div class="card alert wait"><b>Mancano i km di ${r.missing.length} ${r.missing.length === 1 ? "giorno" : "giorni"}</b>${r.missing.map(d => shortDate(d)).join(", ")}</div>` : ""}
+      <div class="nsm-tot"><div><span>Scontrini ok</span><b>${ok.length}</b></div><div><span>Mancanti</span><b class="${miss.length ? "out" : ""}">${miss.length}</b></div><div><span>Da controllare</span><b class="${todo.length ? "out" : ""}">${todo.length}</b></div></div>
+      <div class="card" style="display:flex;justify-content:space-between"><span>Totale spese</span><b class="num">${eur(items.reduce((a, x) => a + x.amount, 0))}</b></div>
+      ${!items.length ? `<p class="muted">Nessuna spesa del Fondo lavoro o della carta carburante in questo mese.</p>` : ""}
+      ${miss.length ? `<div class="shop-dep">Scontrino mancante</div><div class="card">${miss.map(line).join("")}</div>` : ""}
+      ${todo.length ? `<div class="shop-dep">Ancora da controllare</div><div class="card">${todo.map(line).join("")}</div>` : ""}
+      ${items.length ? `<button class="btn wide" id="nsm-again" style="margin-bottom:10px">Ricomincia dalla prima spesa</button>` : ""}
+      <button class="btn primary wide" id="nsm-pdf" ${pdf ? "" : "disabled"}>${pdf ? "Crea il PDF" : pdfErr ? "PDF non disponibile" : "Preparo il PDF…"}</button>
+      ${pdfErr ? `<p class="err">${esc(pdfErr)}</p>` : ""}`;
+    $$("[data-go]", sheet).forEach(b => b.onclick = () => { i = items.findIndex(x => x.id === b.dataset.go); draw(); });
+    if ($("#nsm-again", sheet)) $("#nsm-again", sheet).onclick = () => { i = 0; draw(); };
+    let sure = !(todo.length || miss.length);
+    $("#nsm-pdf", sheet).onclick = () => { if (!pdf) return;
+      if (!sure) { sure = true; $("#nsm-pdf", sheet).textContent = "Crea il PDF lo stesso"; toast(`${todo.length + miss.length} spese senza scontrino controllato: tocca di nuovo per creare il PDF`); return; }
+      const f = new File([pdf.blob], pdf.fileName, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [f] }))
+        navigator.share({ files: [f], title: pdf.fileName }).catch(err => { if (err.name !== "AbortError") toast("Non riesco ad aprire la condivisione: " + err.message); });
+      else { const a = document.createElement("a"); a.href = URL.createObjectURL(pdf.blob); a.download = pdf.fileName; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); } };
+  };
+  draw();
 }
 function openKmWeek(mon) {
   const w = kmWeek(mon), sun = addDays(mon, 6), fuel = fuelList().filter(f => f.day >= mon && f.day <= sun);
@@ -789,13 +821,14 @@ function openKmWeek(mon) {
       <button class="btn wide" id="kw-off" style="margin-bottom:8px">Segna ferie o assenza</button>` : ""}
     <button class="btn primary wide" id="kw-xls" style="margin-top:4px">📎 Nota spese Excel</button>`);
   if ($("#kw-off", sheet)) $("#kw-off", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = "";
-    const free = w.days.find(x => !x.entry || kmEmpty(x.entry)); openAbsence(free ? free.day : mon, null, () => openKmWeek(mon)); };
-  if ($("#kw-crm", sheet)) $("#kw-crm", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = ""; pickGiroCrm(() => openKmWeek(mon)); };
-  $$(".km-day", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); el.dataset.we ? openKm("weekend", sun) : openKm("giorno", el.dataset.d); });
-  $("#kw-xls", sheet).onclick = () => { sheet.remove(); openNotaSpese(addDays(mon, 3).slice(0, 7)); };
+    const free = w.days.find(x => !x.entry || kmEmpty(x.entry)); goSub(() => openKmWeek(mon), () => openAbsence(free ? free.day : mon, null, () => openKmWeek(mon))); };
+  if ($("#kw-crm", sheet)) $("#kw-crm", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = ""; goSub(() => openKmWeek(mon), () => pickGiroCrm(() => openKmWeek(mon))); };
+  const toWeek = () => openKmWeek(mon);
+  $$(".km-day", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); goSub(toWeek, () => el.dataset.we ? openKm("weekend", sun) : openKm("giorno", el.dataset.d)); });
+  $("#kw-xls", sheet).onclick = () => { sheet.remove(); goSub(toWeek, () => openNotaSpese(addDays(mon, 3).slice(0, 7))); };
   const back = () => openKmWeek(mon);
-  $$(".fu-it", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); openFuel(fuel.find(f => f.id === el.dataset.fu), back); });
-  if ($("#kw-fuel", sheet)) $("#kw-fuel", sheet).onclick = () => { sheet.remove(); openFuel(null, back); };
+  $$(".fu-it", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); goSub(toWeek, () => openFuel(fuel.find(f => f.id === el.dataset.fu), back)); });
+  if ($("#kw-fuel", sheet)) $("#kw-fuel", sheet).onclick = () => { sheet.remove(); goSub(toWeek, () => openFuel(null, back)); };
   $("#kw-prev", sheet).onclick = () => { sheet.remove(); openKmWeek(addDays(mon, -7)); };
   $("#kw-next", sheet).onclick = () => { sheet.remove(); openKmWeek(addDays(mon, 7)); };
 }
@@ -1117,15 +1150,22 @@ function dueBadgeW(x) {
   if (x.level) return `<span class="badge ${x.level === "30" ? "wait" : "late"}">${x.days < 0 ? "Scaduto" : x.days === 0 ? "Oggi" : "tra " + x.days + " gg"}</span>`;
   return `<span class="muted" style="font-size:13px">${x.days < 0 ? "scaduto" : x.days > 400 ? shortDate(x.due || x.due_date) + " " + (x.due || x.due_date).slice(0, 4) : "tra " + x.days + " gg"}</span>`;
 }
-function openSheet(title, body, onSave, { saveLabel = "Salva", del } = {}) {
+/* Navigazione tra le schermate: nella gestione spese aziendali (pulsante Km) «‹ Indietro» riporta al menu precedente,
+   non al Riepilogo. sheetBack = dove tornare per la prossima schermata (una volta sola); S.kmMode = siamo dentro il menu Km. */
+let sheetBack = null;
+const goSub = (back, fn) => { sheetBack = back; fn(); };
+function openSheet(title, body, onSave, { saveLabel = "Salva", del, hub = false } = {}) {
+  const back = hub ? null : sheetBack || (S.kmMode ? openKmHub : null); sheetBack = null;
   const sheet = document.createElement("div"); sheet.className = "sheet"; sheet.id = "sheet";
-  sheet.innerHTML = `<div class="sheet-head"><button class="btn link" id="sx">Chiudi</button><h2>${esc(title)}</h2><span style="width:60px"></span></div>
+  sheet.innerHTML = `<div class="sheet-head"><button class="btn link" id="sx">${hub ? "‹ Riepilogo" : back ? "‹ Indietro" : "Chiudi"}</button><h2>${esc(title)}</h2><span style="width:60px"></span></div>
     ${body}<p class="err" id="se"></p>
     ${del && canEdit() ? `<button class="btn danger wide" id="sdel" style="margin-top:8px">${esc(del.label)}</button>` : ""}
     ${onSave && canEdit() ? `<div class="save-bar"><button class="btn primary wide" id="ss">${esc(saveLabel)}</button></div>` : ""}`;
   document.body.appendChild(sheet); document.body.style.overflow = "hidden";
-  const close = () => { sheet.remove(); document.body.style.overflow = ""; render(); };
-  $("#sx", sheet).onclick = close;
+  // tornando indietro si riapre il menu precedente, a meno che la schermata ne abbia già aperta un'altra
+  const close = () => { sheet.remove(); document.body.style.overflow = ""; S.keepKm = !!back; render(); S.keepKm = false;
+    if (back) setTimeout(() => { if (!document.querySelector(".sheet")) back(); }, 120); };
+  $("#sx", sheet).onclick = hub ? () => { S.kmMode = false; sheet.remove(); document.body.style.overflow = ""; render(); } : close;
   let busy = false;   // niente doppi tocchi mentre salva (es. password delle pastiglie, che richiede un secondo)
   const run = async fn => { if (busy) return; busy = true; const b = $("#ss", sheet), lbl = b && b.textContent; if (b) { b.disabled = true; b.textContent = "Un attimo…"; }
     try { const msg = await fn(); close(); if (msg) toast(msg); } catch (e) { $("#se", sheet).textContent = e.message; if (b) { b.disabled = false; b.textContent = lbl; } } finally { busy = false; } };
