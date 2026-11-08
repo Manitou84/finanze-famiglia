@@ -1,11 +1,14 @@
 /* Finanze di Famiglia — web app per iPhone (stesso stile "Casa" del Mac) */
+/* Colori «Notte» (come il Mac): blu notte, giallo per evidenziare, corallo per le uscite, verde per le entrate */
 :root {
-  --bg: #EDF1EC; --panel: #FBFCFA; --line: #DCE3DB; --line2: #C3CCC2;
-  --text: #23302B; --muted: #66736C; --faint: #94A099;
-  --accent: #2E5E4E; --accent-bg: #DCEBE3;
-  --in: #4F7A3A; --in-bg: #E5EFDB; --out: #9A3F5C; --out-bg: #F5E3EA;
-  --mustard: #D9A23B; --mustard-bg: #F7EBCF; --move: #3C6A8C;
-  --round: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+  --bg: #F4F6FA; --panel: #FFFFFF; --line: #E3E8F0; --line2: #D0D8E6; --tile: #EEF1F6;
+  --text: #0F1B33; --muted: #566077; --faint: #6B7590;
+  --accent: #1F3A6E; --accent-bg: #FCE7A6;
+  --in: #17723F; --in-bg: #DDF3E5; --out: #B23A17; --out-bg: #FBE6DF;
+  --mustard: #F9C74F; --mustard-bg: #FFF4CC; --warn: #4A3600; --move: #1B4FD8;
+  --navy: #0F1B33; --navy2: #1B2A4A; --navy-text: #C9D3E6; --navy-muted: #9FB0CC; --yellow: #F9C74F;
+  --bar-in: #2E9E5B; --bar-out: #E8603C;
+  --round: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
   color-scheme: light dark;
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
@@ -13,11 +16,12 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1A211E; --panel: #222B27; --line: #2F3A35; --line2: #44514A;
-    --text: #E7EDE8; --muted: #A3B0A8; --faint: #76837B;
-    --accent: #8CC5AE; --accent-bg: #1F3A30;
-    --in: #A6CC86; --in-bg: #263620; --out: #E59AB4; --out-bg: #40202C;
-    --mustard: #E9BC62; --mustard-bg: #3D2F12; --move: #9CC3E0;
+    --bg: #0B1324; --panel: #141F36; --line: #22314F; --line2: #33456A; --tile: #1C2A47;
+    --text: #EAF0FA; --muted: #A9B6CE; --faint: #8F9CB6;
+    --accent: #9DB7F2; --accent-bg: #F9C74F;
+    --in: #6FD69B; --in-bg: #12392A; --out: #FF9A7D; --out-bg: #45231B;
+    --mustard: #F9C74F; --mustard-bg: #3A3014; --warn: #F9D27A; --move: #9DB7F2;
+    --navy: #16243F; --navy2: #22355C;
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -275,3 +279,70 @@ details summary { color: var(--accent); font-size: 13px; margin: 8px 0 4px; curs
 .md-lg.pl-medio { background: #E3B341; } .md-lg.pl-alto { background: #D9534F; } .md-lg.pl-moltoalto { background: #8E1F1B; }
 .md-chart .pst { display: block; width: 80%; height: 3px; border-radius: 2px; margin-top: 2px; }
 .pst.pl-basso { background: #A7C796; } .pst.pl-medio { background: #E3B341; } .pst.pl-alto { background: #D9534F; } .pst.pl-moltoalto { background: #8E1F1B; }
+
+/* ==========================================================================
+   Grafica «Notte» (2026)
+   ========================================================================== */
+h1, h2 { letter-spacing: -.015em; }
+.btn.primary { background: var(--navy); color: #FFFFFF; border-color: var(--navy); }
+.btn.link { color: var(--move); font-weight: 600; }
+.seg button.on { background: var(--yellow); color: #0F1B33; }
+.bar > div { background: var(--navy); }
+@media (prefers-color-scheme: dark) { .bar > div { background: var(--accent); } .btn.primary { background: var(--yellow); color: #0F1B33; border-color: var(--yellow); } }
+.card.alert.wait { background: var(--mustard-bg); color: var(--warn); }
+
+/* barra in basso: icona attiva su pillola gialla */
+.tabbar { background: color-mix(in srgb, var(--panel) 94%, transparent); padding: 8px 6px calc(8px + var(--safe-b)); }
+.tabbar button { gap: 4px; font-size: 11px; min-height: 44px; }
+.tabbar button svg { width: 22px; height: 22px; }
+.tabbar button[data-v] .ic { width: 52px; height: 30px; border-radius: 999px; display: grid; place-items: center; }
+.tabbar button.on { color: var(--text); font-weight: 650; }
+.tabbar button.on .ic { background: var(--yellow); color: #0F1B33; }
+.tabbar .add span { background: var(--navy); color: #FFFFFF; box-shadow: 0 8px 20px rgba(15, 27, 51, .3); }
+@media (prefers-color-scheme: dark) { .tabbar .add span { background: var(--yellow); color: #0F1B33; } }
+
+/* Riepilogo: intestazione blu notte con saldo */
+.hn-hero { background: var(--navy); color: #FFFFFF; border-radius: 26px; padding: 18px 18px 18px; margin: 2px 0 14px; }
+.hn-hero .hello { font-size: 13px; color: var(--navy-muted); }
+.hn-hero .name { font: 700 21px var(--round); margin-bottom: 12px; }
+.hn-hero .lbl { font-size: 13px; color: var(--navy-muted); }
+.hn-hero .big { font: 700 36px/1.1 var(--round); letter-spacing: -.02em; margin: 2px 0 14px; }
+.hn-hero .duo2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hn-hero .duo2 > div { background: var(--navy2); border-radius: 14px; padding: 10px 12px; }
+.hn-hero .duo2 span { display: block; font-size: 12px; color: var(--navy-muted); }
+.hn-hero .duo2 b { font: 700 17px var(--round); }
+.hn-hero .pin { color: #7EE2A8; } .hn-hero .pout { color: #FFA78E; }
+.hn-quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.hn-quick button { border: 0; background: var(--panel); border-radius: 18px; min-height: 74px; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 6px; font-size: 12.5px; font-weight: 550; color: var(--text); }
+.hn-quick svg { width: 23px; height: 23px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.hn-quick button:active { transform: scale(.97); }
+.hn-bud .top2 { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.hn-bud .top2 h2 { margin: 0; }
+.hn-bud .track { height: 10px; border-radius: 999px; background: var(--out-bg); overflow: hidden; }
+.hn-bud .track div { height: 100%; border-radius: 999px; background: var(--bar-out); }
+.hn-bud .track.over div { background: var(--out); }
+.hn-bud p { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.hn-bud p b { color: var(--text); }
+.card-h2 { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.card-h2 h2 { margin: 0; }
+
+/* movimenti: icona a sinistra, giorni con totale */
+.tx { gap: 12px; padding: 11px 14px; }
+.tx .ti { width: 40px; height: 40px; border-radius: 12px; background: var(--tile); display: grid; place-items: center; flex: none;
+  font: 700 15px var(--round); color: var(--text); position: relative; overflow: hidden; }
+.tx .ti::before { content: ""; position: absolute; inset: 0; background: var(--cc, transparent); opacity: .16; }
+.tx .ti.q { background: var(--mustard-bg); color: var(--warn); }
+.tx .ti svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; position: relative; }
+.tx .ti span { position: relative; }
+.tx .s .ask { color: var(--warn); font-weight: 650; }
+.fchips { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 14px; padding: 0 16px; scrollbar-width: none; }
+.fchips button { flex: none; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line2); background: var(--panel); font-size: 14px; font-weight: 500; color: var(--text); }
+.fchips button.on { background: var(--navy); border-color: var(--navy); color: #FFFFFF; font-weight: 650; }
+@media (prefers-color-scheme: dark) { .fchips button.on { background: var(--yellow); border-color: var(--yellow); color: #0F1B33; } }
+.dhead { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin: 4px 6px 8px; }
+.dhead b { color: var(--text); font-weight: 650; }
+.dgroup { margin-bottom: 14px; }
+.mv-search { position: relative; margin-bottom: 12px; }
+.mv-search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; stroke: var(--muted); fill: none; stroke-width: 1.8; }
+.mv-search input { padding-left: 42px !important; }

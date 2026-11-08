@@ -961,6 +961,19 @@ function forecast() {
     const hr = DB.t.app_settings[DB.hh + "|home_items"];
     for (const h of JSON.parse(hr && hr.value || "[]")) if (h.cost && h.next_due && !covered([h.name.toLowerCase()])) carEvents.push({ date: h.next_due, name: h.name, amount: +h.cost, tag: "casa" });
   } catch (e) { }
+  // tredicesima stimata (come sul Mac: api_previsione.thirteenth): una mensilità a dicembre, proporzionata ai mesi lavorati
+  const tred = (() => {
+    const y = today.slice(0, 4), SW = ["stipend", "emolument", "retribuz", "competenze", "cedolino", "salario", "paga "];
+    const inc = tx.filter(t => t.kind === "entrata" && t.occurred_on >= shiftMonth(cur, -14) + "-01" && t.occurred_on <= today);
+    if (inc.some(t => (t.description || "").toLowerCase().includes("tredicesim") && t.occurred_on.startsWith(y))) return null;
+    const sal = inc.filter(t => SW.some(w => (" " + (t.description || "").toLowerCase() + " ").includes(w))); if (!sal.length) return null;
+    const by = {}; sal.forEach(t => by[t.occurred_on.slice(0, 7)] = (by[t.occurred_on.slice(0, 7)] || 0) + t.amount);
+    let first = Object.keys(by).sort().pop(); while (by[shiftMonth(first, -1)]) first = shiftMonth(first, -1);   // mesi di fila con lo stesso lavoro
+    const months = first.slice(0, 4) < y ? 12 : 12 - +first.slice(5, 7) + 1;
+    const last = Object.keys(by).filter(k => k >= first).sort().slice(-3).map(k => by[k]).sort((a, b) => a - b), net = last.length % 2 ? last[(last.length - 1) / 2] : (last[last.length / 2 - 1] + last[last.length / 2]) / 2;
+    if ((by[y + "-12"] || 0) >= 1.6 * net) return null;
+    return { amount: round2(net * months / 12 * 0.9), months, net: round2(net) };
+  })();
   const tripItems = rows("trip_items").filter(i => !i.booked && i.amount != null && i.due_date && trips().some(t => t.id === i.trip_id && t.status !== "annullata"));
   const goalsMonthly = goalsView().monthly_total;
   const months = []; let bal = round2(liquid.reduce((s, a) => s + a.balance, 0)); const startBal = bal;
@@ -975,6 +988,7 @@ function forecast() {
       items.push({ date: d, name: r.name, amount: sign * r.amount, tag: sign > 0 ? "entrata" : "ricorrente", late: i === 0 && d < today });
     }
     for (const e of carEvents) if (mStart <= e.date && e.date <= mEnd && (i > 0 || e.date >= today)) items.push({ date: e.date, name: e.name, amount: e.amount ? -e.amount : null, tag: e.tag, estimated: e.tag === "auto" });
+    if (m.slice(5) === "12" && tred && (i > 0 || +today.slice(8) < 20)) items.push({ date: m.slice(0, 4) + "-12-15", name: `Tredicesima (stima, ${tred.months}/12)`, amount: tred.amount, tag: "entrata", estimated: true });
     for (const t of tripItems) if (mStart <= t.due_date && t.due_date <= mEnd) items.push({ date: t.due_date, name: `${t.name} (${DB.t.trips[t.trip_id].name})`, amount: -Number(t.amount), tag: "vacanza" });
     const daysLeft = mEnd >= from ? daysTo(mEnd) - daysTo(from) + 1 : 0;
     const varOut = round2(daily * daysLeft), incMore = round2(Math.max(0, usual - (i === 0 ? gotNow : 0)));
@@ -986,7 +1000,7 @@ function forecast() {
     bal = end;
   }
   const warn = months.find(m => m.end < st.threshold);
-  return { balance: startBal, accounts: liquid, work_available: fundAvailable(), daily, span_days: span, usual_income: usual, income_now: gotNow, months, settings: st, goals_monthly: goalsMonthly,
+  return { balance: startBal, accounts: liquid, work_available: fundAvailable(), daily, span_days: span, usual_income: usual, income_now: gotNow, months, settings: st, goals_monthly: goalsMonthly, thirteenth: tred,
     warning: warn ? { month: warn.month, end: warn.end } : null };
 }
 
@@ -1385,7 +1399,8 @@ function medsOwner() {
   const s = kmSettings(); return !!s.owner && s.owner === uid();
 }
 function medIdb(op, val) {
-  return new Promise(res => { try {
+  return new Promise(res => { setTimeout(() => res(null), 2000);   // se la memoria del telefono non risponde non si resta appesi
+    try {
     const rq = indexedDB.open("finanze-chiavi", 1);
     rq.onupgradeneeded = () => rq.result.createObjectStore("k");
     rq.onsuccess = () => { const tx = rq.result.transaction("k", op === "get" ? "readonly" : "readwrite"), st = tx.objectStore("k");

@@ -26,6 +26,13 @@ const ICON = {
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
   cart: '<path d="M3 5h2.5l2 10h10.5l2-7H7"/><circle cx="9.5" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
   cam: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  receipt: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/>',
+  car: '<path d="M5 17h14l-1.5-6h-11z"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="18" r="1.6"/><path d="M7 11l1.5-4h7l1.5 4"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  work: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+  ask: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.6 1.3c0 1.7-2.1 2-2.1 3.2M12 17h.01"/>',
 };
 const S = { view: "home", month: thisMonth(), search: "" };
 
@@ -89,11 +96,11 @@ function renderShell() {
     </header>
     <main id="view"></main>
     <nav class="tabbar">
-      <button data-v="home"><svg viewBox="0 0 24 24">${ICON.home}</svg>Riepilogo</button>
-      <button data-v="movimenti"><svg viewBox="0 0 24 24">${ICON.list}</svg>Movimenti</button>
+      <button data-v="home"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.home}</svg></span>Riepilogo</button>
+      <button data-v="movimenti"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.list}</svg></span>Movimenti</button>
       <button class="add" id="addbtn" aria-label="Aggiungi una spesa"><span>+</span></button>
-      <button data-v="spesa"><svg viewBox="0 0 24 24">${ICON.cart}</svg>Spesa</button>
-      <button data-v="famiglia"><svg viewBox="0 0 24 24">${ICON.fam}</svg>Famiglia</button>
+      <button data-v="spesa"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg></span>Spesa</button>
+      <button data-v="famiglia"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.fam}</svg></span>Famiglia</button>
     </nav>`;
   $$(".tabbar [data-v]").forEach(b => b.onclick = () => { S.view = b.dataset.v; render(); window.scrollTo(0, 0); });
   $("#addbtn").onclick = () => openTx();
@@ -178,7 +185,22 @@ function viewHome() {
   const acc = balances(); const tot = acc.reduce((s, a) => s + a.balance, 0);
   const sumIO = Math.max(d.income, d.expense) || 1;
   const dl = autoDeadlines();
+  const hr = new Date().getHours(), me = String(DB.members[uid()] || "").split(/[ @]/)[0].replace(/^./, c => c.toUpperCase());
+  const budTot = cats().filter(c => d.budgets[c.id] != null && !c.deleted_at && !(c.parent_id && d.budgets[c.parent_id] != null)).reduce((a, c) => a + (+d.budgets[c.id] || 0), 0);
+  const budPct = budTot ? Math.round(d.expense / budTot * 100) : 0;
+  const daysLeft = isNow ? (new Date(+S.month.slice(0, 4), +S.month.slice(5), 0).getDate() - new Date().getDate() + 1) : 0;
   $("#view").innerHTML = `
+    <section class="hn-hero" aria-label="Saldo e mese">
+      <div class="hello">${isNow ? (hr < 13 ? "Buongiorno" : hr < 18 ? "Buon pomeriggio" : "Buonasera") : intro}</div>
+      <div class="name">${isNow ? (me ? "Ciao, " + esc(me) : "Ciao") : esc(monthName(S.month).replace(/^./, c => c.toUpperCase()))}</div>
+      <div class="lbl">Saldo sui conti</div><div class="big num">${eur(tot)}</div>
+      <div class="duo2"><div><span>Entrate</span><b class="num pin">+${eur(d.income)}</b></div><div><span>Uscite</span><b class="num pout">−${eur(d.expense)}</b></div></div>
+    </section>
+    ${canEdit() ? `<div class="hn-quick">
+      <button id="q-add"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.plus}</svg>Spesa</button>
+      <button id="q-scan"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.receipt}</svg>Scontrino</button>
+      ${kmMine() ? `<button id="q-km"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.car}</svg>Km</button>` : ""}
+      <button id="q-list"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg>Lista</button></div>` : ""}
     ${isNow && medsOwner() ? pollenHigh().slice(0, 1).map(p => `<div class="card alert ${p.level === "molto alto" ? "late" : "wait"}" id="pol-al"><b>Graminacee ${p.level === "molto alto" ? "molto alte" : "alte"} ${p.day === todayIso() ? "oggi" : p.day === addDays(todayIso(), 1) ? "domani" : dayLabel(p.day)}</b> ${Math.round(p.v)} granuli/m³${pollenHigh().length > 1 ? " e nei giorni dopo" : ""}: tieni a portata la terapia ›</div>`).join("") : ""}
     ${isNow ? uploadReminders().map(x => `<div class="card alert ${x.lv === "30" ? "wait" : "late"}"><b>Promemoria</b> ${esc(x.text)}</div>`).join("") : ""}
     ${dl.filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}"><b>${esc(x.label)} ${esc(x.vehicle)}</b>
@@ -188,10 +210,11 @@ function viewHome() {
     ${tripsView().filter(t => t.state === "in corso").map(t => `<div class="card alert ok" data-gotrip="${t.id}" style="border-left:5px solid ${t.color}"><b>In vacanza: ${esc(t.name)}</b>
       ${eur(t.spent)} spesi${t.budget ? ` di ${eur(t.budget)}` : ""}${t.per_day ? `, ${eur(t.per_day)} al giorno` : ""} ›</div>`).join("")}
     ${tripDeadlines().filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}" data-gotrip="${x.trip_id}"><b>${esc(x.label)}</b> per ${esc(x.trip)}: entro il ${shortDate(x.due)}${x.days > 0 ? `, tra ${x.days} ${x.days === 1 ? "giorno" : "giorni"}` : ""}</div>`).join("")}
-    <div class="card hbars"><div class="hb-h"><b>${intro}</b>${d.income ? `<span class="muted">${saved >= 0 ? Math.round(saved / d.income * 100) + "% messo da parte" : "spese oltre le entrate"}</span>` : ""}</div>
-      ${[["Entrate", d.income, "var(--in)"], ["Spese", d.expense, "var(--out)"], [saved >= 0 ? "Messo da parte" : "In meno", Math.abs(saved), saved >= 0 ? "var(--accent)" : "var(--out)"]]
-        .map(([l, v, c]) => `<div class="hb-row"><span class="hb-l">${l}</span><div class="hb-track"><div style="width:${Math.max(v ? 2 : 0, v / sumIO * 100)}%;background:${c}"></div></div><b class="num">${eur(v)}</b></div>`).join("")}
-    </div>
+    ${budTot ? `<div class="card hn-bud"><div class="top2"><h2>Budget di ${mName}</h2><span class="muted num">${budPct}%</span></div>
+      <div class="track ${budPct > 100 ? "over" : ""}"><div style="width:${Math.min(100, budPct)}%"></div></div>
+      <p>${d.expense <= budTot ? `Restano <b class="num">${eur(budTot - d.expense)}</b>${daysLeft ? ` per ${daysLeft} ${daysLeft === 1 ? "giorno" : "giorni"}` : ""}` : `<b class="out num">${eur(d.expense - budTot)}</b> oltre il budget`}</p></div>` : ""}
+    <div class="card"><div class="card-h2"><h2>Ultimi movimenti</h2>${d.tx.length ? `<button class="btn link" id="all-tx">Tutti</button>` : ""}</div>
+      ${d.tx.length ? `<div class="list">${d.tx.filter(t => kmMine() || !workKind(t)).slice(0, 4).map(txRow).join("")}</div>` : `<p class="muted">Nessun movimento.</p>`}</div>
     ${(() => { const km = S.month === thisMonth() ? homeKmCard() : "", fc = homeForecastCard();
       return km && fc ? `<div class="duo">${fc}${km}</div>` : fc + km; })()}
     ${homeMedsCard()}
@@ -225,13 +248,14 @@ function viewHome() {
 
     <div class="card"><h2>Conti</h2>${acc.map(a => `<div class="row acc-w" data-acc="${a.id}"><span class="n">${esc(a.name)}</span><b class="num ${a.balance < 0 ? "out" : ""}">${eur(a.balance)}</b>${canEdit() ? '<span class="muted" style="margin-left:8px">›</span>' : ""}</div>`).join("")}
       <div class="row"><span class="n muted">Totale</span><b class="num">${eur(tot)}</b></div>
-      ${fundAccount() ? `<div class="row"><span class="n muted">di cui fondo lavoro (soldi dell'azienda)</span><span class="num muted">${eur(fundAvailable())}</span></div>` : ""}</div>
-
-    <div class="card"><h2>Ultimi movimenti</h2>${d.tx.length ? `<div class="list">${d.tx.slice(0, 5).map(txRow).join("")}</div>
-      <button class="btn link" id="all-tx">Tutti i movimenti</button>` : `<p class="muted">Nessun movimento.</p>`}</div>`;
+      ${fundAccount() && kmMine() ? `<div class="row"><span class="n muted">di cui fondo lavoro (soldi dell'azienda)</span><span class="num muted">${eur(fundAvailable())}</span></div>` : ""}</div>`;
   $$("[data-gofam]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "scadenze"; render(); window.scrollTo(0, 0); });
   if ($("#fc-open")) $("#fc-open").onclick = openForecast;
   bindHomeKm(); bindHomeMeds();
+  if ($("#q-add")) $("#q-add").onclick = () => openTx();
+  if ($("#q-scan")) $("#q-scan").onclick = () => { openTx(); const f = $("#scanf"); if (f) f.click(); };
+  if ($("#q-km")) $("#q-km").onclick = () => openKm(new Date().getDay() === 0 || new Date().getDay() === 6 ? "weekend" : "giorno");
+  if ($("#q-list")) $("#q-list").onclick = () => { S.view = "spesa"; render(); window.scrollTo(0, 0); };
   if ($("#pol-al")) $("#pol-al").onclick = () => medsGate(() => openMeds("cal"));
   pollenRefresh();
   if ($("#sum-hide")) $("#sum-hide").onclick = e => { e.stopPropagation(); S.sumSeen = true; render(); };
@@ -687,7 +711,7 @@ function openKmWeek(mon) {
    ========================================================================== */
 function txRow(t) {
   const wk = workKind(t);
-  if (wk) return `<div class="tx" data-id="${t.id}"><div class="w"><div class="t">${esc(t.description || (wk === "spesa" ? "Spesa di lavoro" : "Fondo di lavoro"))}</div>
+  if (wk) return `<div class="tx" data-id="${t.id}"><div class="ti" style="--cc:#6B5B95"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.work}</svg></div><div class="w"><div class="t">${esc(t.description || (wk === "spesa" ? "Spesa di lavoro" : "Fondo di lavoro"))}</div>
     <div class="s"><span class="chip" style="background:#6B5B9522"><span class="dot" style="background:#6B5B95;width:7px;height:7px"></span>${wk === "spesa" ? "Lavoro · fondo aziendale" : "Fondo aziendale"}</span>
     ${t.updated_by ? `<span>${esc(t.updated_by)}</span>` : ""}</div></div><div class="a num mv">${wk === "spesa" ? "−" : "+"}${eur(t.amount)}</div></div>`;
   const c = catById(t.category_id); const tr = t.kind === "trasferimento";
@@ -695,27 +719,39 @@ function txRow(t) {
   const acc = DB.t.accounts[t.account_id], to = DB.t.accounts[t.transfer_account_id];
   const title = tr ? `${acc ? acc.name : "?"} → ${to ? to.name : "?"}` : t.description || (c ? c.name : t.kind === "entrata" ? "Entrata" : "Spesa");
   const sign = t.kind === "entrata" ? "+" : t.kind === "spesa" ? "−" : "";
-  return `<div class="tx" data-id="${t.id}"><div class="w"><div class="t">${esc(title)}</div>
-    <div class="s"><span class="chip" style="background:${color}22"><span class="dot" style="background:${color};width:7px;height:7px"></span>${esc(tr ? "Trasferimento" : c ? catLabel(c.id) : "Senza categoria")}</span>
+  const tile = tr ? `<div class="ti"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.swap}</svg></div>`
+    : !c ? `<div class="ti q"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.ask}</svg></div>`
+    : `<div class="ti" style="--cc:${color}"><span>${esc((catById(c.parent_id) || c).name.slice(0, 1).toUpperCase())}</span></div>`;
+  return `<div class="tx" data-id="${t.id}">${tile}<div class="w"><div class="t">${esc(title)}</div>
+    <div class="s">${!tr && !c ? `<span class="ask">Scegli la categoria</span>` : `<span class="chip" style="background:${color}22"><span class="dot" style="background:${color};width:7px;height:7px"></span>${esc(tr ? "Trasferimento" : catLabel(c.id))}</span>`}
     ${t.updated_by ? `<span>${esc(t.updated_by)}</span>` : ""}</div></div>
     <div class="a num ${t.kind === "entrata" ? "in" : t.kind === "spesa" ? "out" : "mv"}">${sign}${eur(t.amount)}</div></div>`;
 }
 function bindTxRows(list) { $$("#view .tx").forEach(el => el.onclick = () => openTx(list.find(t => t.id === el.dataset.id))); }
 
 function viewMovimenti() {
-  const d = monthData(S.month); const q = S.search.trim().toLowerCase();
-  const list = d.tx.filter(t => !q || [t.description, catLabel(t.category_id), amountText(t.amount)].some(x => String(x || "").toLowerCase().includes(q)));
+  const d = monthData(S.month); const q = S.search.trim().toLowerCase(), f = S.mkind || "";
+  const base = d.tx.filter(t => kmMine() || !workKind(t));
+  const toSort = base.filter(t => t.kind !== "trasferimento" && !workKind(t) && !t.category_id).length;
+  const list = base.filter(t => (!f || (f === "da" ? t.kind !== "trasferimento" && !workKind(t) && !t.category_id : (workKind(t) || t.kind) === f))
+    && (!q || [t.description, catLabel(t.category_id), amountText(t.amount)].some(x => String(x || "").toLowerCase().includes(q))));
   const days = {}; list.forEach(t => (days[t.occurred_on] = days[t.occurred_on] || []).push(t));
+  const t0 = todayIso(), t1 = addDays(t0, -1);
+  const dayTitle = day => day === t0 ? "Oggi" : day === t1 ? "Ieri" : dayLabel(day).replace(/^./, c => c.toUpperCase());
+  const net = txs => txs.reduce((a, t) => a + (t.kind === "entrata" || workKind(t) === "entrata" ? t.amount : t.kind === "spesa" || workKind(t) === "spesa" ? -t.amount : 0), 0);
   $("#view").innerHTML = `
-    <input type="search" id="q" placeholder="Cerca" value="${esc(S.search)}" style="margin-bottom:14px">
-    <div style="display:flex;justify-content:space-between;font-size:14px;margin:0 4px 12px" class="muted">
-      <span>Entrate <b class="in num">${eur(d.income)}</b></span><span>Spese <b class="out num">${eur(d.expense)}</b></span></div>
-    ${Object.keys(days).length ? Object.entries(days).map(([day, txs]) => { const dt = new Date(day + "T12:00:00");
-      return `<div class="day"><div class="dcol"><div class="dnum">${dt.getDate()}</div><div class="dname">${GG[dt.getDay()]}</div></div>
+    <label class="mv-search"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.search}</svg><input type="search" id="q" placeholder="Cerca un movimento" aria-label="Cerca un movimento" value="${esc(S.search)}"></label>
+    <div class="fchips" role="group" aria-label="Filtra">${[["", "Tutti"], ["spesa", "Uscite"], ["entrata", "Entrate"]].concat(toSort ? [["da", `Senza categoria · ${toSort}`]] : [])
+      .map(([k, l]) => `<button data-f="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;margin:0 6px 12px" class="muted">
+      <span>Entrate <b class="in num">${eur(d.income)}</b></span><span>Uscite <b class="out num">${eur(d.expense)}</b></span></div>
+    ${Object.keys(days).length ? Object.entries(days).map(([day, txs]) => { const n = round2(net(txs));
+      return `<div class="dgroup"><div class="dhead"><b>${dayTitle(day)}</b><span class="num">${n > 0 ? "+" : n < 0 ? "−" : ""}${eur(Math.abs(n))}</span></div>
         <div class="list">${txs.map(txRow).join("")}</div></div>`; }).join("")
-      : `<div class="empty">${d.tx.length ? "Nessun movimento trovato." : "Nessun movimento in " + MESI[+S.month.slice(5) - 1] + ".<br>Tocca + per aggiungerne uno."}</div>`}`;
+      : `<div class="empty">${base.length ? "Nessun movimento trovato." : "Nessun movimento in " + MESI[+S.month.slice(5) - 1] + ".<br>Tocca + per aggiungerne uno."}</div>`}`;
   const q$ = $("#q"); q$.oninput = () => { S.search = q$.value; const p = q$.selectionStart; viewMovimenti(); const n = $("#q"); n.focus(); n.setSelectionRange(p, p); };
-  bindTxRows(d.tx);
+  $$("[data-f]").forEach(b => b.onclick = () => { S.mkind = b.dataset.f; viewMovimenti(); });
+  bindTxRows(base);
 }
 
 /* ---------- inserimento / modifica ---------- */
@@ -996,7 +1032,9 @@ function openSheet(title, body, onSave, { saveLabel = "Salva", del } = {}) {
   document.body.appendChild(sheet); document.body.style.overflow = "hidden";
   const close = () => { sheet.remove(); document.body.style.overflow = ""; render(); };
   $("#sx", sheet).onclick = close;
-  const run = async fn => { try { const msg = await fn(); close(); if (msg) toast(msg); } catch (e) { $("#se", sheet).textContent = e.message; } };
+  let busy = false;   // niente doppi tocchi mentre salva (es. password delle pastiglie, che richiede un secondo)
+  const run = async fn => { if (busy) return; busy = true; const b = $("#ss", sheet), lbl = b && b.textContent; if (b) { b.disabled = true; b.textContent = "Un attimo…"; }
+    try { const msg = await fn(); close(); if (msg) toast(msg); } catch (e) { $("#se", sheet).textContent = e.message; if (b) { b.disabled = false; b.textContent = lbl; } } finally { busy = false; } };
   if ($("#ss", sheet)) $("#ss", sheet).onclick = () => run(onSave);
   if ($("#sdel", sheet)) $("#sdel", sheet).onclick = () => confirm(del.confirm) && run(del.run);
   return { sheet, close, run };
