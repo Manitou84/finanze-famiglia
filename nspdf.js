@@ -41,10 +41,15 @@ function nsDisplay(v, fmt) {
 }
 function nsDrawCell(ops, sp, v) {
   const txt = nsDisplay(v, sp.n); if (!txt) return;
-  const [x0, y0, x1, y1] = sp.b, size = sp.z * NS_S, [name, t, tz] = NS_FONT[sp.f + (sp.w ? 1 : 0)];
+  const [x0, y0, x1, y1] = sp.b; let size = sp.z * NS_S; const [name, t, tz] = NS_FONT[sp.f + (sp.w ? 1 : 0)];
   const h = sp.h === "general" ? (typeof v === "string" ? "left" : "right") : sp.h;
   const rp = NS_PAD + (sp.n.includes("_L_.") ? pdfWidth("L.", size, t, tz) : 0);
-  const lines = sp.wr ? pdfWrap(txt, x1 - x0 - 2 * NS_PAD, size, t, tz) : [txt], n = lines.length;
+  let lines = sp.wr ? pdfWrap(txt, x1 - x0 - 2 * NS_PAD, size, t, tz) : [txt];
+  // testo lungo (tanti paesi o clienti): si rimpicciolisce finché sta tutto dentro la casella, senza sovrapporsi
+  while (sp.wr && size > 3.6 && (lines.length - 1) * NS_LH * size + (NS_ASC + NS_DESC) * size + 2 * NS_PAD > y1 - y0) {
+    size -= 0.2; lines = pdfWrap(txt, x1 - x0 - 2 * NS_PAD, size, t, tz); }
+  while (!sp.wr && typeof v === "string" && size > 3.6 && h !== "left" && pdfWidth(txt, size, t, tz) > x1 - x0 - 2 * NS_PAD) size -= 0.2;
+  const n = lines.length;
   const base = sp.v === "top" ? y0 + NS_PAD + NS_ASC * size
     : sp.v === "center" ? (y0 + y1) / 2 - ((n - 1) * NS_LH * size + (NS_ASC + NS_DESC) * size) / 2 + NS_ASC * size
     : y1 - NS_DESC * size - NS_PAD - (n - 1) * NS_LH * size;
