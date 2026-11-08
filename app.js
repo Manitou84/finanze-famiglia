@@ -32,6 +32,10 @@ const ICON = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   work: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+  fuel: '<path d="M5 20V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v15M4 20h11M5 10h9"/><path d="M14 8l3 3v6a1.5 1.5 0 0 0 3 0v-7l-3-3"/>',
+  crm: '<path d="M12 21s-6-5.4-6-10a6 6 0 0 1 12 0c0 4.6-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
+  off: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  xls: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 12l4 5M14 12l-4 5"/>',
   ask: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.6 1.3c0 1.7-2.1 2-2.1 3.2M12 17h.01"/>',
 };
 const S = { view: "home", month: thisMonth(), search: "" };
@@ -199,7 +203,7 @@ function viewHome() {
     ${canEdit() ? `<div class="hn-quick">
       <button id="q-add"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.plus}</svg>Spesa</button>
       <button id="q-scan"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.receipt}</svg>Scontrino</button>
-      ${kmMine() ? `<button id="q-km"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.car}</svg>Km</button>` : ""}
+      ${kmMine() ? (() => { const st = kmQuickState(); return `<button id="q-km" class="${st.todo ? "todo" : ""}" aria-label="Km lavoro: ${esc(st.text)}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.car}</svg>Km<em>${esc(st.text)}</em></button>`; })() : ""}
       <button id="q-list"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg>Lista</button></div>` : ""}
     ${isNow && medsOwner() ? pollenHigh().slice(0, 1).map(p => `<div class="card alert ${p.level === "molto alto" ? "late" : "wait"}" id="pol-al"><b>Graminacee ${p.level === "molto alto" ? "molto alte" : "alte"} ${p.day === todayIso() ? "oggi" : p.day === addDays(todayIso(), 1) ? "domani" : dayLabel(p.day)}</b> ${Math.round(p.v)} granuli/m³${pollenHigh().length > 1 ? " e nei giorni dopo" : ""}: tieni a portata la terapia ›</div>`).join("") : ""}
     ${isNow ? uploadReminders().map(x => `<div class="card alert ${x.lv === "30" ? "wait" : "late"}"><b>Promemoria</b> ${esc(x.text)}</div>`).join("") : ""}
@@ -215,8 +219,7 @@ function viewHome() {
       <p>${d.expense <= budTot ? `Restano <b class="num">${eur(budTot - d.expense)}</b>${daysLeft ? ` per ${daysLeft} ${daysLeft === 1 ? "giorno" : "giorni"}` : ""}` : `<b class="out num">${eur(d.expense - budTot)}</b> oltre il budget`}</p></div>` : ""}
     <div class="card"><div class="card-h2"><h2>Ultimi movimenti</h2>${d.tx.length ? `<button class="btn link" id="all-tx">Tutti</button>` : ""}</div>
       ${d.tx.length ? `<div class="list">${d.tx.filter(t => kmMine() || !workKind(t)).slice(0, 4).map(txRow).join("")}</div>` : `<p class="muted">Nessun movimento.</p>`}</div>
-    ${(() => { const km = S.month === thisMonth() ? homeKmCard() : "", fc = homeForecastCard();
-      return km && fc ? `<div class="duo">${fc}${km}</div>` : fc + km; })()}
+    ${homeForecastCard()}
     ${homeMedsCard()}
     ${S.month === thisMonth() && new Date().getDate() <= 10 && !S.sumSeen ? homeSummaryCard() : ""}
     ${homeGoalsCard()}
@@ -254,7 +257,7 @@ function viewHome() {
   bindHomeKm(); bindHomeMeds();
   if ($("#q-add")) $("#q-add").onclick = () => openTx();
   if ($("#q-scan")) $("#q-scan").onclick = () => { openTx(); const f = $("#scanf"); if (f) f.click(); };
-  if ($("#q-km")) $("#q-km").onclick = () => openKm(new Date().getDay() === 0 || new Date().getDay() === 6 ? "weekend" : "giorno");
+  if ($("#q-km")) $("#q-km").onclick = () => openKmHub();
   if ($("#q-list")) $("#q-list").onclick = () => { S.view = "spesa"; render(); window.scrollTo(0, 0); };
   if ($("#pol-al")) $("#pol-al").onclick = () => medsGate(() => openMeds("cal"));
   pollenRefresh();
@@ -370,6 +373,58 @@ const GIORNI_L = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "
 const dayLabel = iso => { const d = new Date(iso + "T12:00:00"); return `${GIORNI_L[d.getDay()]} ${d.getDate()} ${MESI[d.getMonth()]}`; };
 const fmtKm = v => v == null ? "—" : new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 }).format(v);
 function lastSunday() { const t = todayIso(), d = new Date(t + "T12:00:00").getDay(); return d === 0 ? t : addDays(t, -d); }
+/* Km lavoro: tutto dietro il pulsante «Km» del Riepilogo */
+function kmQuickState() {
+  const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
+  const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
+  const weNeeded = (dow === 0 || dow === 1) && rs.length && !rs.some(r => r.day === sun && r.kind === "weekend");
+  const miss = kmWeek(mondayOf(t)).days.filter(x => x.missing && x.day < t).length;
+  const work = dow >= 1 && dow <= 5;
+  if (weNeeded) return { todo: true, text: "weekend" };
+  if (work && (!todayE || (kmEmpty(todayE) && !kmAbsence(todayE)))) return { todo: true, text: "oggi" };
+  if (miss) return { todo: true, text: miss + " da fare" };
+  return { todo: false, text: "a posto" };
+}
+function openKmHub() {
+  const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
+  const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
+  const weE = rs.find(r => r.day === sun && r.kind === "weekend");
+  const wk = kmWeek(mondayOf(t)), miss = wk.days.filter(x => x.missing && x.day < t);
+  const work = dow >= 1 && dow <= 5, ed = canEdit();
+  const todayTxt = todayE && kmAbsence(todayE) ? kmAbsence(todayE) : todayE && !kmEmpty(todayE) ? `${fmtKm(todayE.day_km)} km segnati` : work ? "da segnare" : "giorno libero";
+  const weFirst = (dow === 0 || dow === 1) && !weE && rs.length;
+  const todayMissing = work && (!todayE || (kmEmpty(todayE) && !kmAbsence(todayE)));
+  // il pulsante grande solo quando c'è qualcosa da fare: weekend, oggi o il primo giorno mancante
+  const mainLbl = weFirst ? "Segna i km del weekend" : todayMissing ? "Segna i km di oggi" : miss.length ? `Completa ${dayLabel(miss[0].day)}` : "";
+  const tile = (id, icon, title, sub, cls = "") => `<button class="kh-t ${cls}" id="${id}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span><b>${title}</b>${sub ? `<em>${sub}</em>` : ""}</span></button>`;
+  const { sheet } = openSheet("Km lavoro", `
+    <div class="kh-sum">
+      <div><span>Oggi</span><b>${esc(todayTxt)}</b></div>
+      <div><span>Questa settimana</span><b class="num">${fmtKm(wk.km)} km</b></div>
+      <div><span>Da completare</span><b class="${miss.length ? "out" : ""}">${miss.length ? miss.length + (miss.length === 1 ? " giorno" : " giorni") : "nessuno"}</b></div>
+    </div>
+    ${miss.length ? `<p class="hint" style="margin:-4px 4px 12px">Mancano: ${miss.map(x => dayLabel(x.day)).join(", ")}</p>` : ""}
+    ${ed && mainLbl ? `<button class="btn primary wide" id="kh-main" style="margin-bottom:14px">${mainLbl}</button>` : ""}
+    <div class="kh-grid">
+      ${ed ? tile("kh-today", ICON.car, "Km di oggi", esc(todayTxt)) : ""}
+      ${ed ? tile("kh-we", ICON.cal, "Km weekend", weE ? `${fmtKm(weE.private_km)} km privati` : "contachilometri della domenica") : ""}
+      ${tile("kh-week", ICON.list, "Settimana", "giorni, km e rifornimenti")}
+      ${ed ? tile("kh-fuel", ICON.fuel, "Carburante", "carta aziendale") : ""}
+      ${ed ? tile("kh-crm", ICON.crm, "Carica dal CRM", "paesi e clienti del giro") : ""}
+      ${ed ? tile("kh-off", ICON.off, "Ferie, malattia", "o permesso") : ""}
+      ${tile("kh-xls", ICON.xls, "Nota spese", "Excel da mandare o PDF da stampare", "wide")}
+    </div>`);
+  const go = fn => () => { sheet.remove(); document.body.style.overflow = ""; fn(); };
+  const back = () => openKmHub();
+  if ($("#kh-main", sheet)) $("#kh-main", sheet).onclick = go(() => weFirst ? openKm("weekend") : todayMissing ? openKm("giorno") : openKm("giorno", miss[0].day));
+  if ($("#kh-today", sheet)) $("#kh-today", sheet).onclick = go(() => openKm("giorno"));
+  if ($("#kh-we", sheet)) $("#kh-we", sheet).onclick = go(() => openKm("weekend"));
+  $("#kh-week", sheet).onclick = go(() => openKmWeek(mondayOf(t)));
+  if ($("#kh-fuel", sheet)) $("#kh-fuel", sheet).onclick = go(() => openFuel(null, back));
+  if ($("#kh-crm", sheet)) $("#kh-crm", sheet).onclick = go(() => pickGiroCrm(back));
+  if ($("#kh-off", sheet)) $("#kh-off", sheet).onclick = go(() => openAbsence(t, null, back));
+  $("#kh-xls", sheet).onclick = go(() => openNotaSpese());
+}
 function homeKmCard() {
   if (!kmMine() || (!rows("work_km").length && !canEdit())) return "";
   const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
@@ -651,14 +706,16 @@ function openNotaSpese(month) {
     return `<div class="pw-stats"><div><span>Settimane</span><b class="num">${d.sheets.map(x => x[0]).join(", ") || "—"}</b></div>
       <div><span>Km di lavoro</span><b class="num">${fmtKm(d.totalKm)}</b></div><div><span>Carburante carta</span><b class="num">${eur(fuel)}</b></div></div>
       ${d.missing.length ? `<p class="out" style="font-size:13px;margin:10px 0 0">Mancano i km di ${d.missing.length} ${d.missing.length === 1 ? "giorno" : "giorni"}: ${d.missing.map(x => shortDate(x)).join(", ")}</p>` : ""}`; };
-  const { sheet } = openSheet("Nota spese Excel", `
+  const { sheet } = openSheet("Nota spese", `
     <label class="f"><span>Mese</span><select id="ns-m">${months.map(m => `<option value="${m}" ${m === month ? "selected" : ""}>${monthName(m).replace(/^./, c => c.toUpperCase())}</option>`).join("")}</select></label>
     <div class="card" id="ns-info">${info(month)}</div>
     <p class="hint">Lo stesso file che crea il Mac: un foglio per settimana con km, paesi, clienti, spese del Fondo lavoro e carburante della carta aziendale.
       ${canShareFiles ? "Tocca «Invia per email», scegli <b>Mail</b> e scrivi il tuo indirizzo aziendale: il file è già allegato." : ""}</p>
     ${!nsTemplate() ? `<p class="err">Manca il modello: apri il programma sul Mac e vai in «Km e nota spese», poi riprova qui dopo la sincronizzazione.</p>` : ""}
     <button class="btn primary wide" id="ns-send">${canShareFiles ? "Invia per email" : "Scarica il file"}</button>
-    ${canShareFiles ? `<button class="btn wide" id="ns-dl" style="margin-top:8px">Salva in File</button>` : ""}`);
+    ${canShareFiles ? `<button class="btn wide" id="ns-dl" style="margin-top:8px">Salva in File</button>` : ""}
+    <div class="ns-pdf"><b>Da stampare</b><span>Prima controlli ogni spesa con il suo scontrino, poi il PDF identico al modello dell'azienda: un foglio per settimana.</span>
+      <button class="btn wide" id="ns-pdf">Stampa o PDF</button></div>`);
   // il file si prepara subito: Safari apre la condivisione solo se parte direttamente dal tocco, senza attese
   let ready = null, gen = 0;
   const prepare = () => { const my = ++gen, m = $("#ns-m", sheet).value; ready = null; $("#se", sheet).textContent = "";
@@ -674,7 +731,44 @@ function openNotaSpese(month) {
     navigator.share({ files: [f], title: r.fileName, text: `Nota spese ${monthName($("#ns-m", sheet).value)} – ${r.name}` })
       .catch(err => { if (err.name !== "AbortError") $("#se", sheet).textContent = "Non riesco ad aprire la condivisione: " + err.message; }); };
   if ($("#ns-dl", sheet)) $("#ns-dl", sheet).onclick = () => ready && download(ready);
+  $("#ns-pdf", sheet).onclick = () => { const m = $("#ns-m", sheet).value; sheet.remove(); document.body.style.overflow = ""; openNsReview(m); };
   if (nsTemplate()) prepare(); else $$("#ns-send, #ns-dl", sheet).forEach(b => b.disabled = true);
+}
+/* revisione prima del PDF: ogni spesa con il suo scontrino */
+const nsChecks = () => { try { return JSON.parse(localStorage.getItem("finanze-ns-check") || "{}"); } catch (e) { return {}; } };
+const nsSaveChecks = c => { try { localStorage.setItem("finanze-ns-check", JSON.stringify(c)); } catch (e) { } };
+function openNsReview(month) {
+  const r = nsReviewData(month), all = r.weeks.flatMap(w => w.items), ck = nsChecks();
+  const { sheet } = openSheet(`Controlla ${MESI[+month.slice(5) - 1]}`, `
+    <p class="hint">Tocca ogni spesa quando trovi lo scontrino: importo e giorno devono coincidere. Se qualcosa non torna, toccala a lungo per correggerla.</p>
+    ${r.missing.length ? `<div class="card alert wait"><b>Mancano i km di ${r.missing.length} ${r.missing.length === 1 ? "giorno" : "giorni"}</b>${r.missing.map(d => shortDate(d)).join(", ")}</div>` : ""}
+    ${r.weeks.map(w => `<div class="nsr-w"><div class="nsr-h"><b>Settimana ${w.week}</b><span>${shortDate(w.monday)} – ${shortDate(w.sunday)}</span><b class="num">${eur(w.total)}</b></div>
+      ${w.items.length ? w.items.map(x => `<button type="button" class="nsr-i ${ck[x.id] ? "ok" : ""}" data-ck="${esc(x.id)}" aria-pressed="${ck[x.id] ? "true" : "false"}">
+        <i aria-hidden="true"></i><span class="t"><b>${esc(x.desc)}</b><em>${dayLabel(x.day)} · ${esc(x.label)}</em></span><b class="num">${eur(x.amount)}</b></button>`).join("")
+        : `<p class="muted" style="margin:8px 0 2px;font-size:14px">Nessuna spesa in questa settimana.</p>`}</div>`).join("")}
+    <div class="nsr-sum"><span id="nsr-c"></span><b class="num">Totale ${eur(all.reduce((a, x) => a + x.amount, 0))}</b></div>
+    <button class="btn primary wide" id="nsr-go" disabled>Preparo il PDF…</button>`);
+  let pdf = null, sure = false;
+  const left = () => all.filter(x => !ck[x.id]).length;
+  const label = () => { const n = left(), b = $("#nsr-go", sheet); if (!b) return;
+    $("#nsr-c", sheet).innerHTML = all.length ? `Spuntate <b>${all.length - n}</b> di ${all.length}` : "Nessuna spesa nel mese";
+    if (pdf) { b.disabled = false; b.textContent = !n ? "Crea il PDF" : sure ? `Crea il PDF comunque` : `Crea il PDF (${n} da controllare)`; } };
+  buildNotaSpesePdf(month).then(x => { pdf = x; label(); }).catch(e => { $("#se", sheet).textContent = e.message; $("#nsr-go", sheet).textContent = "PDF non disponibile"; });
+  $$("[data-ck]", sheet).forEach(b => {
+    let t = null;
+    b.onclick = () => { if (b.dataset.long) { delete b.dataset.long; return; } const id = b.dataset.ck; if (ck[id]) delete ck[id]; else ck[id] = 1; nsSaveChecks(ck);
+      b.classList.toggle("ok", !!ck[id]); b.setAttribute("aria-pressed", ck[id] ? "true" : "false"); sure = false; label(); };
+    const tx = rows("transactions").find(z => z.id === b.dataset.ck);
+    if (tx && canEdit()) { b.addEventListener("touchstart", () => { t = setTimeout(() => { b.dataset.long = 1; sheet.remove(); document.body.style.overflow = ""; openTx(tx); }, 600); }, { passive: true });
+      ["touchend", "touchmove"].forEach(ev => b.addEventListener(ev, () => clearTimeout(t), { passive: true })); }
+  });
+  $("#nsr-go", sheet).onclick = () => { if (!pdf) return;
+    if (left() && !sure) { sure = true; label(); toast("Ci sono spese non spuntate: tocca di nuovo per creare il PDF lo stesso"); return; }
+    const f = new File([pdf.blob], pdf.fileName, { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [f] }))
+      navigator.share({ files: [f], title: pdf.fileName }).catch(err => { if (err.name !== "AbortError") $("#se", sheet).textContent = "Non riesco ad aprire la condivisione: " + err.message; });
+    else { const a = document.createElement("a"); a.href = URL.createObjectURL(pdf.blob); a.download = pdf.fileName; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); } };
+  label();
 }
 function openKmWeek(mon) {
   const w = kmWeek(mon), sun = addDays(mon, 6), fuel = fuelList().filter(f => f.day >= mon && f.day <= sun);
@@ -1428,7 +1522,7 @@ async function verifyLock() {
 function showLock() {
   if ($("#lock")) return;
   document.body.insertAdjacentHTML("beforeend", `<div id="lock" class="lock"><div class="lock-box">
-    <img src="apple-touch-icon.png" alt=""><h1>Finanze di Famiglia</h1><p class="muted">Bloccata</p>
+    <img src="apple-touch-icon.png" alt=""><h1>Finanze di Famiglia</h1><p class="muted">Tocca un punto qualsiasi per sbloccare con Face ID</p>
     <button class="btn primary wide" id="lock-go">Sblocca con Face ID</button><p class="err" id="lock-err"></p>
     <button class="btn link" id="lock-out" style="margin-top:20px">Non funziona? Esci e accedi con la password</button></div></div>`);
   document.body.style.overflow = "hidden";
@@ -1439,13 +1533,15 @@ function showLock() {
     catch (e) { if (!auto && $("#lock-err")) $("#lock-err").textContent = e.name === "NotAllowedError" ? "Annullato o non riconosciuto: tocca di nuovo «Sblocca»" : (e.message || "Non riuscito"); }
     busy = false;
   };
-  $("#lock-go").onclick = () => go(false);
+  // il Face ID parte dal tocco: così l'iPhone va dritto al riconoscimento del volto, senza la finestra «Usa la passkey»
+  // che compare quando la richiesta parte da sola (Safari la mostra sempre se non c'è un tocco)
+  $("#lock").onclick = e => { if (!e.target.closest("#lock-out")) go(false); };
   $("#lock-out").onclick = () => {
     const p = pendingCount();
     if (!confirm(p ? `${p} modifiche non sono ancora state inviate: se esci le perdi. Uscire?` : "Uscire? Poi accedi di nuovo con email e password.")) return;
     logout(); saveLockCfg({ enabled: false }); $("#lock").remove(); document.body.style.overflow = ""; renderLogin();
   };
-  setTimeout(() => go(true), 350);   // prova subito; se l'iPhone vuole un tocco, c'è il bottone
+
 }
 async function drawLockCard() {
   const box = $("#lockcard"); if (!box) return;

@@ -1267,7 +1267,7 @@ function notaSpeseData(month) {
     const w = kmWeek(mon), iw = isoWeek(mon), sun = addDays(mon, 6);
     totalKm += w.km; missing = missing.concat(w.days.filter(x => x.missing).map(x => x.day));
     const cells = { P3: String(iw.week), Q3: iw.year, E6: `data ${MESI_UP[m - 1]} ${y}`, I6: `nome:  ${name}`, C8: excelSerial(mon) };
-    if (w.weekend && w.weekend.odometer != null) cells.P5 = w.weekend.odometer;
+    if (w.weekend && w.weekend.odometer != null) cells.P5 = String(w.weekend.odometer);   // testo: la casella ha il formato data
     const exp = {};
     tx.filter(t => t.occurred_on >= mon && t.occurred_on <= sun).forEach(t => {
       const k = NS_DAY_COLS[Math.round((new Date(t.occurred_on + "T12:00:00") - new Date(mon + "T12:00:00")) / 864e5)] + nsExpenseRow(t.description);
