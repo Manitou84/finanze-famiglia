@@ -190,7 +190,7 @@ function viewHome() {
   const acc = balances(); const tot = acc.reduce((s, a) => s + a.balance, 0);
   const sumIO = Math.max(d.income, d.expense) || 1;
   const dl = autoDeadlines();
-  const hr = new Date().getHours(), me = String(DB.members[uid()] || "").split(/[ @]/)[0].replace(/^./, c => c.toUpperCase());
+  const hr = new Date().getHours(), me = greetName();
   const budTot = cats().filter(c => d.budgets[c.id] != null && !c.deleted_at && !(c.parent_id && d.budgets[c.parent_id] != null)).reduce((a, c) => a + (+d.budgets[c.id] || 0), 0);
   const budPct = budTot ? Math.round(d.expense / budTot * 100) : 0;
   const daysLeft = isNow ? (new Date(+S.month.slice(0, 4), +S.month.slice(5), 0).getDate() - new Date().getDate() + 1) : 0;
@@ -1490,12 +1490,26 @@ function openTripItemW(it) {
 /* ==========================================================================
    Altro
    ========================================================================== */
+/* nome nel saluto: quello scritto in «Come ti saluto» (app_settings greet_<id>, uguale sul Mac),
+   altrimenti un nome comune trovato nel nome utente o nell'email (es. guizzo.alberto@… → Alberto) */
+const GREET_NAMES = new Set(["achille", "adriana", "adriano", "agnese", "alba", "alberto", "aldo", "alessandra", "alessandro", "alessia", "alessio", "alfredo", "alice", "amedeo", "andrea", "angela", "angelo", "anna", "annalisa", "antonella", "antonio", "arianna", "armando", "arturo", "attilio", "augusto", "aurora", "barbara", "beatrice", "benedetta", "benito", "bianca", "bruno", "camilla", "camillo", "carla", "carlo", "carlotta", "carmela", "caterina", "cesare", "chiara", "christian", "cinzia", "claudia", "claudio", "concetta", "cosimo", "cristian", "cristina", "damiano", "daniela", "daniele", "dario", "davide", "debora", "deborah", "denis", "diana", "diego", "dino", "domenico", "edoardo", "elena", "eleonora", "elia", "elio", "elisa", "elisabetta", "emanuela", "emanuele", "emilio", "emma", "enrico", "enzo", "erica", "erika", "ettore", "ezio", "fabio", "fabiola", "fabrizio", "fausto", "federica", "federico", "fernando", "filiberto", "filippo", "flavio", "franca", "francesca", "francesco", "franco", "gabriel", "gabriele", "gaetano", "gaia", "gerardo", "germano", "giacomo", "giada", "giancarlo", "gianfranco", "gianluca", "gianni", "gilberto", "ginevra", "gino", "giordano", "giorgia", "giorgio", "giovanna", "giovanni", "giulia", "giulio", "giuseppe", "giuseppina", "graziano", "greta", "guido", "igor", "ilaria", "irene", "isabella", "italo", "ivan", "ivano", "jacopo", "jessica", "katia", "lamberto", "laura", "leonardo", "leone", "linda", "lino", "lisa", "livio", "loredana", "lorena", "lorenzo", "luca", "lucia", "luciano", "lucio", "ludovica", "luigi", "luisa", "manuel", "manuela", "marcello", "marco", "margherita", "maria", "mariangela", "mariano", "marina", "marino", "mario", "marta", "martina", "martino", "massimo", "matilde", "matteo", "mattia", "maurizio", "mauro", "michael", "michela", "michele", "michelle", "miriam", "mirko", "monica", "nadia", "nazzareno", "nello", "nevio", "niccol\u00f2", "nicola", "nicole", "nicol\u00f2", "noemi", "omar", "orlando", "ornella", "oscar", "osvaldo", "ottavio", "paola", "paolo", "patrick", "patrizia", "pierluigi", "piero", "pierpaolo", "pietro", "raffaele", "raffaella", "raimondo", "rebecca", "remo", "renato", "renzo", "riccardo", "rinaldo", "rita", "roberta", "roberto", "rocco", "rodolfo", "romano", "rosa", "rudy", "ruggero", "sabrina", "salvatore", "samuel", "samuele", "sandro", "sara", "sebastiano", "serena", "sergio", "silvia", "silvio", "simona", "simone", "sofia", "stefania", "stefano", "susanna", "teodoro", "teresa", "thomas", "tiberio", "tiziana", "tiziano", "tommaso", "tullio", "ugo", "umberto", "valentina", "valerio", "valter", "vasco", "veronica", "vincenzo", "viola", "vito", "vittoria", "vittorio", "walter", "yuri", "zeno"]);
+function greetName() {
+  const r = DB.t.app_settings[DB.hh + "|greet_" + uid()];
+  if (r && (r.value || "").trim()) return r.value.trim();
+  const disp = DB.members[uid()] || "", mail = (DB.email || "").split("@")[0];
+  const tok = (disp + " " + mail).split(/[^A-Za-zÀ-ÿ]+/).filter(Boolean);
+  const hit = tok.find(t => GREET_NAMES.has(t.toLowerCase()));
+  const w = hit || (disp || mail).trim().split(/[\s@._-]+/)[0] || "";
+  return w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : "";
+}
 function viewAltro() {
   const set = Object.fromEntries(rows("app_settings").map(r => [r.key, r.value]));
   $("#view").innerHTML = `
     <div class="card"><h2>${esc(DB.members[uid()] || DB.email)}</h2>
-      <p class="hint">${esc(DB.email)}, famiglia ${esc(DB.hhName)}, ${({ owner: "amministratore", member: "membro", viewer: "sola lettura" })[DB.role] || ""}</p></div>
-    ${fundAccount() ? (() => { const f = fundAccount(), m = thisMonth(), av = fundAvailable();
+      <p class="hint">${esc(DB.email)}, famiglia ${esc(DB.hhName)}, ${({ owner: "amministratore", member: "membro", viewer: "sola lettura" })[DB.role] || ""}</p>
+      ${canEdit() ? `<label class="f"><span>Come ti saluto nel Riepilogo</span><input type="text" id="gr-n" maxlength="40" value="${esc(greetName())}"></label>
+        <button class="btn" id="gr-save">Salva il nome</button>` : ""}</div>
+    ${fundAccount() && kmMine() ? (() => { const f = fundAccount(), m = thisMonth(), av = fundAvailable();
       let amt = null; try { amt = JSON.parse((DB.t.app_settings[DB.hh + "|work_settings"] || {}).value || "{}").amount; } catch (e) { }
       const sp = round2(rows("transactions").filter(t => t.kind === "trasferimento" && t.transfer_account_id === f.id && t.occurred_on.startsWith(m)).reduce((s, t) => s + Number(t.amount), 0));
       return `<div class="card"><h2>Fondo spese lavoro</h2><div class="row"><span class="n">Disponibile</span><b class="num">${eur(av)}</b></div>
@@ -1517,6 +1531,8 @@ function viewAltro() {
     <div class="card" id="lockcard"></div>
     <div class="card"><h2>Esci</h2><p class="hint">Scollega questo telefono. I dati restano su Supabase.</p><button class="btn danger" id="lo">Esci</button></div>`;
   drawLockCard();
+  if ($("#gr-save")) $("#gr-save").onclick = () => { const v = $("#gr-n").value.replace(/\s+/g, " ").trim().slice(0, 40);
+    write("app_settings", { key: "greet_" + uid(), value: v || null }); $("#gr-n").value = greetName(); toast("Salvato: ti saluto come " + greetName()); };
   $("#sn").onclick = async () => { await sync(); toast(syncError === "offline" ? "Sei offline" : syncError || "Dati aggiornati"); render(); };
   $("#ps").onclick = async () => {
     const a = $("#p1").value, b = $("#p2").value;
