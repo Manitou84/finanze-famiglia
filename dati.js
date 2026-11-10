@@ -961,16 +961,17 @@ function forecast() {
     const hr = DB.t.app_settings[DB.hh + "|home_items"];
     for (const h of JSON.parse(hr && hr.value || "[]")) if (h.cost && h.next_due && !covered([h.name.toLowerCase()])) carEvents.push({ date: h.next_due, name: h.name, amount: +h.cost, tag: "casa" });
   } catch (e) { }
-  // tredicesima stimata (come sul Mac: api_previsione.thirteenth): una mensilità a dicembre, proporzionata ai mesi lavorati
+  // tredicesima stimata (come sul Mac: api_previsione.thirteenth): matura dall'assunzione in Caron Technology
+  // (1° ottobre 2026: ottobre-dicembre = 3/12) e si calcola solo sugli stipendi che arrivano da Caron
   const tred = (() => {
-    const y = today.slice(0, 4), SW = ["stipend", "emolument", "retribuz", "competenze", "cedolino", "salario", "paga "];
+    const y = today.slice(0, 4), START = "2026-10-01", EMP = ["caron"];
     const inc = tx.filter(t => t.kind === "entrata" && t.occurred_on >= shiftMonth(cur, -14) + "-01" && t.occurred_on <= today);
     if (inc.some(t => (t.description || "").toLowerCase().includes("tredicesim") && t.occurred_on.startsWith(y))) return null;
-    const sal = inc.filter(t => SW.some(w => (" " + (t.description || "").toLowerCase() + " ").includes(w))); if (!sal.length) return null;
-    const by = {}; sal.forEach(t => by[t.occurred_on.slice(0, 7)] = (by[t.occurred_on.slice(0, 7)] || 0) + t.amount);
-    let first = Object.keys(by).sort().pop(); while (by[shiftMonth(first, -1)]) first = shiftMonth(first, -1);   // mesi di fila con lo stesso lavoro
-    const months = first.slice(0, 4) < y ? 12 : 12 - +first.slice(5, 7) + 1;
-    const last = Object.keys(by).filter(k => k >= first).sort().slice(-3).map(k => by[k]).sort((a, b) => a - b), net = last.length % 2 ? last[(last.length - 1) / 2] : (last[last.length / 2 - 1] + last[last.length / 2]) / 2;
+    const sal = inc.filter(t => t.occurred_on >= START && !(t.external_id || "").startsWith("split:") && EMP.some(w => (t.description || "").toLowerCase().includes(w)));
+    if (!sal.length) return null;
+    const by = {}; sal.forEach(t => by[t.occurred_on.slice(0, 7)] = (by[t.occurred_on.slice(0, 7)] || 0) + Number(t.amount));
+    const months = START.slice(0, 4) < y ? 12 : 12 - +START.slice(5, 7) + 1;
+    const last = Object.keys(by).sort().slice(-3).map(k => by[k]).sort((a, b) => a - b), net = last.length % 2 ? last[(last.length - 1) / 2] : (last[last.length / 2 - 1] + last[last.length / 2]) / 2;
     if ((by[y + "-12"] || 0) >= 1.6 * net) return null;
     return { amount: round2(net * months / 12 * 0.9), months, net: round2(net) };
   })();
@@ -1296,8 +1297,10 @@ function nsFormulaValues(cells) {
   const num = r => typeof cells[r] === "number" ? cells[r] : 0, out = {};
   if (typeof cells.C8 === "number") { NS_DC.slice(1).forEach((c, k) => out[c + "8"] = cells.C8 + k + 1); out.A27 = cells.C8; [29, 31, 33, 35].forEach((r, k) => out["A" + r] = cells.C8 + k + 1); }
   for (let r = 9; r <= 20; r++) out["Q" + r] = r === 14 ? num("Q14") : round2(NS_DC.reduce((a, c) => a + num(c + r), 0));
-  NS_DC.forEach(c => { let t = 0; for (let r = 9; r <= 20; r++) t += num(c + r); out[c + "21"] = round2(t); });
-  let q = 0; for (let r = 9; r <= 20; r++) q += out["Q" + r]; out.Q21 = round2(q);
+  // totali solo su ciò che l'azienda rimborsa: tutto tranne pedaggi (10) e carburante (13, 14), che si vedono ma non si sommano
+  const RR = [9, 11, 12, 15, 16, 17, 18, 19, 20];
+  NS_DC.forEach(c => out[c + "21"] = round2(RR.reduce((a, r) => a + num(c + r), 0)));
+  out.Q21 = round2(RR.reduce((a, r) => a + out["Q" + r], 0));
   out.I23 = "I23" in cells ? num("I23") : round1([26, 28, 30, 32, 34].reduce((a, r) => a + num("H" + r), 0));
   out.I37 = out.I23;
   out.E39 = out.E41 = out.Q21; if (out.Q21 > 0) out.E43 = out.Q21;
@@ -1340,6 +1343,7 @@ async function buildNotaSpese(month) {
     let xml = i > 1 ? baseSheet.replace('tabSelected="true"', 'tabSelected="false"') : baseSheet;
     for (const [ref, val] of Object.entries(cells)) xml = nsSetCell(xml, ref, val);
     xml = xml.replace(/(<f[^>]*>[^<]*<\/f>)<v>[^<]*<\/v>/g, "$1");   // formule ricalcolate all'apertura
+    xml = xml.replace(/(<c r="([C-Q])21"[^>]*><f[^>]*>)SUM\(\2(9):\2(20)\)/g, (m, a, c) => `${a}SUM(${c}9,${c}11:${c}12,${c}15:${c}20)`);   // totali senza pedaggi e carburante
     for (const [ref, val] of Object.entries(nsFormulaValues(cells))) if (!(ref in cells)) xml = nsCache(xml, ref, val);   // e risultati già pronti per le anteprime
     put(`xl/worksheets/sheet${i}.xml`, xml);
     put(`xl/worksheets/_rels/sheet${i}.xml.rels`, baseRels.replace("drawing1.xml", `drawing${i}.xml`));
