@@ -968,8 +968,17 @@ function forecast() {
     const inc = tx.filter(t => t.kind === "entrata" && t.occurred_on >= shiftMonth(cur, -14) + "-01" && t.occurred_on <= today);
     if (inc.some(t => (t.description || "").toLowerCase().includes("tredicesim") && t.occurred_on.startsWith(y))) return null;
     const sal = inc.filter(t => t.occurred_on >= START && !(t.external_id || "").startsWith("split:") && EMP.some(w => (t.description || "").toLowerCase().includes(w)));
-    if (!sal.length) return null;
-    const by = {}; sal.forEach(t => by[t.occurred_on.slice(0, 7)] = (by[t.occurred_on.slice(0, 7)] || 0) + Number(t.amount));
+    // da Caron arrivano anche il fondo spese e i rimborsi della nota spese: non sono stipendio
+    const NOT = ["rimbors", "nota spese", "note spese", "anticip", "fondo", "reintegr", "trasfert", "spese viaggio"];
+    const PAY = ["stipend", "emolument", "retribuz", "competenze", "cedolino", "salario", "paga "];
+    const low = t => (t.description || "").toLowerCase();
+    const sal2 = sal.filter(t => !NOT.some(w => low(t).includes(w)));
+    if (!sal2.length) return null;
+    const by = {};
+    [...new Set(sal2.map(t => t.occurred_on.slice(0, 7)))].forEach(m => {
+      const xs = sal2.filter(t => t.occurred_on.startsWith(m)), pay = xs.filter(t => PAY.some(w => low(t).includes(w)));
+      by[m] = pay.length ? pay.reduce((s, t) => s + Number(t.amount), 0) : Math.max(...xs.map(t => Number(t.amount)));
+    });
     const months = START.slice(0, 4) < y ? 12 : 12 - +START.slice(5, 7) + 1;
     const last = Object.keys(by).sort().slice(-3).map(k => by[k]).sort((a, b) => a - b), net = last.length % 2 ? last[(last.length - 1) / 2] : (last[last.length / 2 - 1] + last[last.length / 2]) / 2;
     if ((by[y + "-12"] || 0) >= 1.6 * net) return null;
