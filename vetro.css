@@ -1,0 +1,59 @@
+/* Disposizione «Vetro» sull'iPhone (come sul Mac): barra in basso sospesa di vetro, riquadri semitrasparenti,
+   sfondo di colori che si muovono piano, piccole animazioni. «Classico» in Impostazioni la toglie. */
+html.glass {
+  --glass: color-mix(in srgb, var(--panel) 62%, transparent);
+  --glass-strong: color-mix(in srgb, var(--panel) 80%, transparent);
+  --glass-edge: color-mix(in srgb, #FFFFFF 60%, transparent);
+  --glass-shadow: 0 10px 30px -14px rgba(20, 28, 60, .30), 0 1px 0 rgba(255, 255, 255, .55) inset;
+  --blur: blur(20px) saturate(170%);
+}
+@media (prefers-color-scheme: dark) {
+  html.glass { --glass: color-mix(in srgb, var(--panel) 58%, transparent); --glass-edge: color-mix(in srgb, #FFFFFF 12%, transparent);
+    --glass-shadow: 0 12px 34px -14px rgba(0, 0, 0, .7), 0 1px 0 rgba(255, 255, 255, .07) inset; }
+}
+html.glass body::before {
+  content: ""; position: fixed; inset: -25%; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(40% 30% at 15% 18%, color-mix(in srgb, var(--move) 30%, transparent), transparent 70%),
+    radial-gradient(36% 26% at 88% 30%, color-mix(in srgb, var(--bar-out) 22%, transparent), transparent 70%),
+    radial-gradient(42% 30% at 72% 82%, color-mix(in srgb, var(--bar-in) 24%, transparent), transparent 70%),
+    radial-gradient(34% 26% at 22% 70%, color-mix(in srgb, var(--yellow) 30%, transparent), transparent 70%);
+  filter: blur(26px); animation: g-drift 38s ease-in-out infinite alternate;
+}
+@keyframes g-drift { 0% { transform: translate(0, 0) rotate(0); } 50% { transform: translate(4%, -3%) rotate(7deg); } 100% { transform: translate(-4%, 3%) rotate(-6deg); } }
+html.glass #app { position: relative; z-index: 1; }
+/* intestazione: vetro leggero */
+html.glass .top { background: color-mix(in srgb, var(--bg) 55%, transparent); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+html.glass .top h1 { letter-spacing: -.02em; }
+html.glass .mnav button, html.glass .gear { background: var(--glass); border-color: var(--glass-edge); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--glass-shadow); }
+/* barra in basso: pillola sospesa, l'icona attiva su un indicatore che scivola */
+html.glass .tabbar { left: 12px; right: 12px; bottom: calc(10px + var(--safe-b)); padding: 7px 6px; border-radius: 28px;
+  background: var(--glass); border: 1px solid var(--glass-edge); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  box-shadow: 0 18px 40px -16px rgba(15, 27, 51, .45), 0 1px 0 rgba(255, 255, 255, .5) inset; }
+html.glass .tabbar button[data-v] .ic { transition: background-color .25s, transform .3s cubic-bezier(.3, 1.5, .4, 1); }
+html.glass .tabbar button.on .ic { transform: scale(1.04); box-shadow: 0 6px 14px -8px rgba(201, 150, 20, .9); }
+html.glass .tabbar button:active { transform: scale(.94); }
+html.glass .tabbar .add span { background: linear-gradient(180deg, color-mix(in srgb, var(--navy) 75%, #FFFFFF), var(--navy) 60%); }
+@media (prefers-color-scheme: dark) { html.glass .tabbar .add span { background: linear-gradient(180deg, #FFE08A, var(--yellow) 60%); color: #0F1B33; } }
+html.glass main { padding-bottom: calc(118px + var(--safe-b)) !important; }
+/* riquadri di vetro */
+html.glass .card { background: var(--glass); border: 1px solid var(--glass-edge); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--glass-shadow); }
+html.glass .card.alert { background: color-mix(in srgb, var(--mustard-bg) 80%, transparent); }
+html.glass .hn-hero { background: color-mix(in srgb, var(--navy) 94%, transparent); box-shadow: 0 20px 40px -20px rgba(15, 27, 51, .7); position: relative; overflow: hidden; }
+html.glass .hn-hero::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(120% 60% at 100% 0%, rgba(249, 199, 79, .20), transparent 55%), radial-gradient(90% 60% at 0% 100%, rgba(27, 79, 216, .25), transparent 60%); }
+html.glass .hn-hero .duo2 > div { background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .08); }
+html.glass .chips button, html.glass .fchips button { -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+/* entrata: i riquadri salgono uno dopo l'altro */
+html.glass main > * { animation: g-rise .5s cubic-bezier(.2, .8, .2, 1) both; }
+html.glass main > :nth-child(2) { animation-delay: .05s; } html.glass main > :nth-child(3) { animation-delay: .1s; }
+html.glass main > :nth-child(4) { animation-delay: .15s; } html.glass main > :nth-child(n+5) { animation-delay: .2s; }
+@keyframes g-rise { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+/* schede che si aprono dal basso con la pagina sotto sfocata */
+html.glass .sheet { background: color-mix(in srgb, var(--bg) 95%, transparent); -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%);
+  animation: g-sheet .38s cubic-bezier(.2, 1, .3, 1); }
+@keyframes g-sheet { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+html.glass .btn:active:not(:disabled) { transform: scale(.96); }
+html.glass .btn { transition: transform .12s; }
+html.glass #toast { border-radius: 999px; background: color-mix(in srgb, #0F1B33 86%, transparent); color: #FFFFFF; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+@media (prefers-reduced-motion: reduce) { html.glass body::before, html.glass main > *, html.glass .sheet { animation: none; } }
