@@ -522,7 +522,7 @@ async function openMeds(tab, opts = {}) {
   S.medTab = tab || S.medTab || "oggi"; S.medMonth = opts.month || S.medMonth || todayIso().slice(0, 7); S.medPeriod = S.medPeriod || "mese";
   const st = await medsStats(S.medMonth, S.medPeriod, S.medFilter || null), meds = st.meds;
   const reopen = (t, o) => () => openMeds(t, o);
-  const tabs = `<div class="seg" id="md-tabs" style="margin-bottom:12px">${[["oggi", "Oggi"], ["cal", "Calendario"], ["graf", "Grafici"], ["farm", "Farmaci"]].map(([k, l]) => `<button data-t="${k}" class="${S.medTab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  const tabs = `<div class="seg" id="md-tabs" style="margin-bottom:12px">${[["oggi", "Oggi"], ["lista", "Elenco"], ["cal", "Calendario"], ["graf", "Grafici"], ["farm", "Farmaci"]].map(([k, l]) => `<button data-t="${k}" class="${S.medTab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
   let body = "";
   const t = todayIso();
   if (S.medTab === "oggi") {
@@ -530,6 +530,17 @@ async function openMeds(tab, opts = {}) {
     const recent = []; for (let i = 1; i <= 6; i++) { const d = addDays(t, -i); if (d.slice(0, 7) === S.medMonth || true) recent.push(d); }
     body = `<div class="card"><h2>Oggi</h2>${xs.length ? xs.map(x => `<div class="row md-x" data-x="${x.id}" data-at="${x.at}"><span class="n"><span class="dot" style="background:${x.color}"></span> <b>${esc(x.name)}</b> <span class="muted">${doseText(x, x)}</span></span><span class="muted">${x.at.slice(11)} ›</span></div>`).join("") : `<p class="muted" style="margin:0">Ancora niente oggi.</p>`}</div>
       <button class="btn primary wide" id="md-add">Ho preso una pastiglia</button>`;
+  } else if (S.medTab === "lista") {
+    // elenco delle pastiglie prese nel mese: data, ora, farmaco e dosaggio (le più recenti in alto)
+    const days = Object.keys(st.calendar).filter(d => d.startsWith(S.medMonth)).sort().reverse();
+    const all = days.flatMap(d => (st.calendar[d] || []).filter(x => !S.medFilter || x.med_id === S.medFilter));
+    body = `<div class="card"><div class="km-head"><button class="btn link" id="md-pm" aria-label="Mese precedente">‹</button><b>${monthName(S.medMonth)}</b><button class="btn link" id="md-nm" aria-label="Mese successivo">›</button></div>
+        <select id="md-lf" style="margin-top:8px"><option value="">Tutti i farmaci</option>${meds.map(m => `<option value="${m.id}" ${S.medFilter === m.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
+        <p class="muted" style="font-size:13px;margin:8px 0 0">${all.length} ${all.length === 1 ? "dose" : "dosi"} nel mese</p></div>
+      ${days.map(d => { const xs = (st.calendar[d] || []).filter(x => !S.medFilter || x.med_id === S.medFilter).sort((a, b) => b.at.localeCompare(a.at)); if (!xs.length) return "";
+        return `<div class="dhead"><b>${dayLabel(d).replace(/^./, c => c.toUpperCase())}</b><span>${xs.length} ${xs.length === 1 ? "dose" : "dosi"}</span></div>
+          <div class="card" style="padding:4px 14px">${xs.map(x => `<div class="row md-x" data-x="${x.id}" data-at="${x.at}"><span class="muted num" style="width:46px">${x.at.slice(11)}</span><span class="n"><span class="dot" style="background:${x.color}"></span> <b>${esc(x.name)}</b><br><span class="muted" style="font-size:13px">${doseText(x, x)}</span></span><span class="muted">›</span></div>`).join("")}</div>`; }).join("")
+        || `<p class="muted" style="text-align:center;margin-top:20px">Nessuna pastiglia segnata in ${monthName(S.medMonth)}.</p>`}`;
   } else if (S.medTab === "cal") {
     const first = S.medMonth + "-01", start = mondayOf(first), last = addDays(medAddMonths(S.medMonth, 1) + "-01", -1);
     let cells = ""; for (let d = start; d <= last || new Date(d + "T12:00:00").getDay() !== 1; d = addDays(d, 1)) {
@@ -570,6 +581,7 @@ async function openMeds(tab, opts = {}) {
   if ($("#md-pm", sheet)) $("#md-pm", sheet).onclick = go(() => openMeds(S.medTab, { month: medAddMonths(S.medMonth, -step) }));
   if ($("#md-nm", sheet)) $("#md-nm", sheet).onclick = go(() => openMeds(S.medTab, { month: medAddMonths(S.medMonth, step) }));
   $$("#md-per [data-p]", sheet).forEach(b => b.onclick = go(() => { S.medPeriod = b.dataset.p; openMeds("graf"); }));
+  if ($("#md-lf", sheet)) $("#md-lf", sheet).onchange = go(() => { S.medFilter = $("#md-lf", sheet).value || null; openMeds("lista"); });
   if ($("#md-f", sheet)) $("#md-f", sheet).onchange = go(() => { S.medFilter = $("#md-f", sheet).value || null; openMeds("graf"); });
   $$(".md-m", sheet).forEach(el => el.onclick = go(() => openMed(meds.find(m => m.id === el.dataset.m), reopen("farm"))));
   if ($("#md-newmed", sheet)) $("#md-newmed", sheet).onclick = go(() => openMed(null, reopen("farm")));
