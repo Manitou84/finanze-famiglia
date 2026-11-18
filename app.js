@@ -755,6 +755,8 @@ function openBilling() {
     </div>
     <p class="bill-hint">Tocca un dato per copiarlo · lo schermo resta acceso</p></div>`);
   document.body.style.overflow = "hidden";
+  // il nome dell'azienda su una riga sola: il carattere si rimpicciolisce finché ci sta
+  const nm = $("#bill .bc-name"); for (let z = 29; z > 14 && nm.scrollWidth > nm.clientWidth; z--) nm.style.fontSize = z - 1 + "px";
   let lock = null;
   if (navigator.wakeLock) navigator.wakeLock.request("screen").then(l => lock = l).catch(() => { });
   const close = () => { const e = $("#bill"); if (e) e.remove(); document.body.style.overflow = ""; if (lock) lock.release().catch(() => { }); };
