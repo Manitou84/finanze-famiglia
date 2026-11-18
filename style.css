@@ -432,3 +432,4 @@ input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }  
 .bi-qr { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .bi-qr img { width: 88px; height: 88px; border-radius: 10px; border: 1px solid var(--line); background: #FFFFFF; image-rendering: pixelated; }
 .bi-loc { display: grid; grid-template-columns: 92px 1fr 70px; gap: 8px; }
+.bill-card .bc-tel { display: block; font-size: 16px; color: #4A5468; margin-top: 4px; font-variant-numeric: tabular-nums; }
