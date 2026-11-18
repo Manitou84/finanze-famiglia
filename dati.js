@@ -1226,6 +1226,9 @@ function saveFuel(d) {
   if (time) { if (!/^\d{1,2}:\d{2}$/.test(time)) throw new Error("Ora non valida (es. 8:30)"); it.time = time.padStart(5, "0"); }
   if (odo) { if (!/^\d{1,7}$/.test(odo)) throw new Error("Contachilometri: scrivi solo il numero dei km"); it.odo = +odo; }
   if (place) it.place = place;
+  // già stampata sul Mac e non cambiata: niente nuovo promemoria
+  const old = fuelList().find(x => x.id === d.id);
+  if (old && old.printed && ["day", "amount", "time", "odo", "place"].every(k => old[k] === it[k])) it.printed = old.printed;
   items.push(it); items.sort((a, b) => a.day.localeCompare(b.day));
   write("app_settings", { key: "fuel_card", value: JSON.stringify(items) });
   return id;
