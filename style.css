@@ -495,3 +495,17 @@ input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }  
 .sheet.drawer .seg { flex-wrap: wrap; }
 .sheet.drawer .seg button { font-size: 13.5px; padding: 7px 4px; min-width: 0; }
 .sheet.drawer select { text-overflow: ellipsis; }
+
+/* «Work» dal basso: il pannello sale dal fondo; le schermate lo «allungano» fino in cima */
+.wk-grab { display: none; }
+body.wk-bottom .sheet.drawer { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: 86vh; border-radius: 26px 26px 0 0;
+  transform: translateY(105%); box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, .45); padding: 8px 16px calc(24px + var(--safe-b)); }
+body.wk-bottom .sheet.drawer.on { transform: none; }
+body.wk-bottom .sheet.drawer .wk-grab { display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line2, #C9CFDA); margin: 0 auto 12px; }
+body.wk-bottom .sheet.drawer.sub { top: calc(var(--safe-t) + 10px); max-height: none; width: 100%; padding: 14px 16px calc(110px + var(--safe-b)); font-size: 15px;
+  animation: wk-grow .32s cubic-bezier(.2, .9, .25, 1) !important; }
+@keyframes wk-grow { from { transform: translateY(30vh); } to { transform: none; } }
+body.wk-bottom .sheet.drawer.sub::before { content: ""; display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line2, #C9CFDA); margin: -6px auto 10px; }
+body.wk-bottom .sheet.drawer .save-bar, body.wk-bottom .sheet.drawer.sub .save-bar { left: 0; width: 100%; border-radius: 0; padding: 10px 16px calc(12px + var(--safe-b)); }
+/* a tutta larghezza le coppie di campi tornano affiancate */
+body.wk-bottom .sheet.drawer [style*="grid-template-columns:1fr 1fr"], body.wk-bottom .sheet.drawer .grid2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; gap: 10px !important; }

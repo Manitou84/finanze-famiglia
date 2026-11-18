@@ -389,7 +389,10 @@ function kmQuickState() {
   if (miss) return { todo: true, text: miss + " da fare" };
   return { todo: false, text: "a posto" };
 }
+// come si apre «Work»: "side" = barra da destra, "bottom" = pannello dal basso e schermate a tutto schermo
+const WORK_STYLE = "bottom";
 function openKmHub() {
+  document.body.classList.toggle("wk-bottom", WORK_STYLE === "bottom");
   S.kmMode = true;
   const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
   const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
@@ -406,7 +409,7 @@ function openKmHub() {
   const reuse = document.querySelector(".drawer-bg");
   const bg = reuse || document.createElement("div"); if (!reuse) { bg.className = "drawer-bg"; document.body.appendChild(bg); }
   const sheet = document.createElement("aside"); sheet.className = "sheet drawer"; sheet.id = "sheet"; sheet.setAttribute("aria-label", "Work");
-  sheet.innerHTML = `<div class="wk-head"><div><span>Auto aziendale e trasferte</span><h2>Work</h2></div><button class="wk-x" id="kh-x" aria-label="Chiudi">✕</button></div>
+  sheet.innerHTML = `<div class="wk-grab" aria-hidden="true"></div><div class="wk-head"><div><span>Auto aziendale e trasferte</span><h2>Work</h2></div><button class="wk-x" id="kh-x" aria-label="Chiudi">✕</button></div>
     <div class="wk-sum">
       <div><span>Oggi</span><b>${esc(todayTxt)}</b></div>
       <div><span>Settimana</span><b class="num">${fmtKm(wk.km)} km</b></div>
@@ -431,8 +434,10 @@ function openKmHub() {
   const back = null;   // il ritorno al menu lo fa «‹ Indietro» (S.kmMode)
   $("#kh-x", sheet).onclick = closeAll; bg.onclick = closeAll;
   // trascinando verso destra si chiude
-  let x0 = null; sheet.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; }, { passive: true });
-  sheet.addEventListener("touchend", e => { if (x0 != null && e.changedTouches[0].clientX - x0 > 70) closeAll(); x0 = null; }, { passive: true });
+  let x0 = null, y0 = null;
+  sheet.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; y0 = sheet.scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
+  sheet.addEventListener("touchend", e => { const t = e.changedTouches[0];
+    if (WORK_STYLE === "bottom" ? y0 != null && t.clientY - y0 > 80 : x0 != null && t.clientX - x0 > 70) closeAll(); x0 = y0 = null; }, { passive: true });
   if ($("#kh-today", sheet)) $("#kh-today", sheet).onclick = go(() => openKm("giorno"));
   if ($("#kh-we", sheet)) $("#kh-we", sheet).onclick = go(() => openKm("weekend"));
   $("#kh-week", sheet).onclick = go(() => openKmWeek(mondayOf(t)));
