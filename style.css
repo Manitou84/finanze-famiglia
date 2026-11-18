@@ -533,3 +533,6 @@ body.wk-bottom .sheet.drawer:not(.sub) { max-height: 50vh; padding: 8px 14px cal
 /* icone con etichetta piccola */
 .wk-k { aspect-ratio: 1; gap: 6px; } .wk-k svg { width: 26px; height: 26px; }
 .wk-k span { font-size: 11px; font-weight: 600; line-height: 1.1; }
+.sheet.drawer.back { transition: none; }
+body.wk-bottom .sheet.drawer.back { animation: wk-shrink .28s cubic-bezier(.2, .9, .25, 1); }
+@keyframes wk-shrink { from { transform: translateY(-20vh); opacity: .6; } to { transform: none; opacity: 1; } }

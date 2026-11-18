@@ -426,7 +426,7 @@ function openKmHub() {
       ${key("kh-xls", ICON.xls, "Nota spese")}
     </div>`;
   document.body.appendChild(sheet); document.body.style.overflow = "hidden";
-  if (reuse) sheet.classList.add("on", "sub");     // tornando da una schermata: niente nuova entrata
+  if (reuse) sheet.classList.add("on", "back");    // tornando da una schermata: il menu torna piccolo, senza nuova entrata
   requestAnimationFrame(() => { bg.classList.add("on"); sheet.classList.add("on"); });
   const shut = () => { sheet.remove(); bg.remove(); document.body.style.overflow = ""; };
   const closeAll = () => { S.kmMode = false; bg.classList.remove("on"); sheet.classList.remove("on"); setTimeout(() => { shut(); render(); }, 260); };
