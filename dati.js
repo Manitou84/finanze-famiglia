@@ -1240,7 +1240,7 @@ function billingGet() {
 }
 function billingSave(d) {
   guard();
-  const v = {}; ["name", "address", "zip", "city", "prov", "vat", "cf", "sdi", "pec", "note"].forEach(k => { const x = String(d[k] || "").trim().slice(0, 200); if (x) v[k] = k === "prov" ? x.toUpperCase() : x; });
+  const v = {}; ["name", "address", "zip", "city", "prov", "vat", "cf", "sdi", "pec", "phone", "note"].forEach(k => { const x = String(d[k] || "").trim().slice(0, 200); if (x) v[k] = k === "prov" ? x.toUpperCase() : x; });
   if (v.zip && !/^\d{5}$/.test(v.zip)) throw new Error("Il CAP ha 5 cifre");
   if (!v.name) throw new Error("Scrivi almeno la ragione sociale");
   if (d.qr && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(d.qr) && d.qr.length < 400000) v.qr = d.qr;   // QR code dell'azienda per la fattura
