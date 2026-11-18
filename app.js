@@ -708,11 +708,33 @@ function openFuel(f, back) {
   const { sheet } = openSheet(f ? "Rifornimento" : "Carburante carta aziendale", `
     <input class="amount num" id="fu-a" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Importo" value="${f ? Number(f.amount).toFixed(2).replace(".", ",") : ""}">
     <div class="amount-line">pagato con la carta carburante dell'azienda</div>
-    <label class="f"><span>Giorno del rifornimento</span><input type="date" id="fu-d" value="${f ? f.day : todayIso()}"></label>
+    <div class="grid2"><label class="f"><span>Giorno</span><input type="date" id="fu-d" value="${f ? f.day : todayIso()}"></label>
+      <label class="f"><span>Ora <em class="opt">facoltativa</em></span><input type="time" id="fu-t" value="${f && f.time ? f.time : ""}"></label></div>
+    <label class="f"><span>Km del contachilometri <em class="opt">facoltativo</em></span><input type="text" inputmode="numeric" id="fu-k" placeholder="es. 48.250" autocomplete="off" value="${f && f.odo ? fmtKm(f.odo) : ""}"></label>
+    <label class="f"><span>Distributore e luogo <em class="opt">facoltativo</em></span><input type="text" id="fu-p" maxlength="80" placeholder="es. Eni, via Roma – Cittadella" autocomplete="off" value="${f && f.place ? esc(f.place) : ""}"></label>
+    <div class="fu-decl" id="fu-decl"></div>
     <p class="hint">Va nella riga «Carburante card aziendale» della nota spese, nel giorno indicato. Non è una spesa vostra e non tocca i conti.</p>`,
-    () => { saveFuel({ id: f && f.id, amount: $("#fu-a").value, day: $("#fu-d").value }); if (back) setTimeout(back, 50); return "Rifornimento salvato"; },
+    () => { saveFuel(fuelForm(f)); if (back) setTimeout(back, 50); return "Rifornimento salvato"; },
     f ? { del: { label: "Elimina", confirm: "Eliminare questo rifornimento?", run: () => { deleteFuel(f.id); if (back) setTimeout(back, 50); return "Eliminato"; } } } : {});
+  // con importo, ora, km e distributore compare la dichiarazione per il controllo costi (al posto della ricevuta mancante)
+  const fuelForm = f => ({ id: f && f.id, amount: $("#fu-a", sheet).value, day: $("#fu-d", sheet).value, time: $("#fu-t", sheet).value, odo: $("#fu-k", sheet).value, place: $("#fu-p", sheet).value });
+  const decl = () => { const d = fuelForm(f), a = parseAmount(d.amount), ok = a > 0 && d.time && d.odo.trim() && d.place.trim();
+    $("#fu-decl", sheet).innerHTML = ok ? `<div class="fu-ok"><b>Dati completi.</b> Se il distributore non ti ha dato la ricevuta, crea la dichiarazione da consegnare al controllo costi.</div>
+      <button type="button" class="btn wide" id="fu-pdf">📄 Dichiarazione di rifornimento (PDF)</button>`
+      : `<p class="hint" style="margin-top:0">Con ora, km e distributore puoi creare una dichiarazione da consegnare al controllo costi quando manca la ricevuta.</p>`;
+    if ($("#fu-pdf", sheet)) $("#fu-pdf", sheet).onclick = () => {
+      let id; try { id = saveFuel(fuelForm(f)); } catch (e) { return toast(e.message); }
+      f = fuelList().find(x => x.id === id);
+      try { sharePdf(buildFuelPdf(f)); toast("Rifornimento salvato"); } catch (e) { toast(e.message); } };
+  };
+  ["#fu-a", "#fu-t", "#fu-k", "#fu-p"].forEach(q => $(q, sheet).addEventListener("input", decl)); decl();
   if (!f) setTimeout(() => $("#fu-a", sheet).focus(), 250);
+}
+function sharePdf(pdf) {
+  const f = new File([pdf.blob], pdf.fileName, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [f] }))
+    return navigator.share({ files: [f], title: pdf.fileName }).catch(err => { if (err.name !== "AbortError") toast("Non riesco ad aprire la condivisione: " + err.message); });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(pdf.blob); a.download = pdf.fileName; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
 }
 function openNotaSpese(month) {
   const cur = todayIso().slice(0, 7), months = [0, 1, 2].map(i => shiftMonth(cur, -i));
@@ -826,7 +848,7 @@ function openKmWeek(mon) {
       <b class="num">${x.entry && kmAbsence(x.entry) ? "" : x.entry ? (x.planned ? `<span class="${x.missing ? "out" : "muted"}" style="font-size:12px;font-weight:500">km da scrivere</span>` : fmtKm(x.entry.day_km) + " km") : ""}</b><span class="muted" style="margin-left:6px">›</span></div>`).join("")}
       <div class="row km-day" data-we="1"><span class="n"><b>Weekend</b><br><span class="muted" style="font-size:12px">${w.weekend ? `contachilometri ${fmtKm(w.weekend.odometer)}` : sun < todayIso() ? '<span class="out">da completare</span>' : "domenica sera"}</span></span>
         <b class="num">${w.weekend ? fmtKm(w.weekend.private_km) + " km" : ""}</b><span class="muted" style="margin-left:6px">›</span></div></div>
-    ${fuel.length || canEdit() ? `<div class="card"><h2>⛽ Carburante carta aziendale</h2>${fuel.map(f => `<div class="row fu-it" data-fu="${f.id}"><span class="n">${dayLabel(f.day)}</span>
+    ${fuel.length || canEdit() ? `<div class="card"><h2>⛽ Carburante carta aziendale</h2>${fuel.map(f => `<div class="row fu-it" data-fu="${f.id}"><span class="n">${dayLabel(f.day)}${f.time || f.place ? `<br><span class="muted" style="font-size:12px">${esc([f.time, f.place].filter(Boolean).join(" · "))}${fuelComplete(f) ? " · 📄" : ""}</span>` : ""}</span>
       <b class="num">${eur(f.amount)}</b><span class="muted" style="margin-left:6px">›</span></div>`).join("") || `<p class="muted" style="margin:0">Nessun rifornimento questa settimana.</p>`}
       ${canEdit() ? `<button class="btn link" id="kw-fuel" style="margin-top:6px">+ Aggiungi rifornimento</button>` : ""}</div>` : ""}
     ${canEdit() ? `<button class="btn wide" id="kw-crm" style="margin-bottom:8px">Carica paesi e clienti dal CRM</button>

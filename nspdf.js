@@ -102,3 +102,50 @@ function nsReviewData(month) {
     weeks.push({ week: iw.week, monday: mon, sunday: sun, km: w.km, items, total: round2(items.reduce((a, x) => a + x.amount, 0)) }); });
   return { weeks, missing: notaSpeseData(month).missing };
 }
+
+/* ==========================================================================
+   Dichiarazione di rifornimento: quando il distributore non dà la ricevuta, un foglio A4 compilato dal
+   dipendente con data, ora, distributore, contachilometri e importo, da firmare e consegnare al controllo costi. Formato A5.
+   Dichiara che è un documento interno e che non sostituisce un documento fiscale.
+   ========================================================================== */
+function buildFuelPdf(f) {
+  if (!fuelComplete(f)) throw new Error("Servono importo, ora, km e distributore");
+  const s = kmSettings(), W = 595.28, H = 841.89, L = 50, R = W - 50, ops = [];   // disegnata in A4, stampata in A5 (scala 1/√2)
+  const txt = (x, y, str, size, bold, gray) => ops.push(`BT /${bold ? "F2" : "F1"} ${size} Tf ${gray ? "0.42 0.45 0.52 rg" : "0.06 0.11 0.2 rg"} ${x.toFixed(2)} ${y.toFixed(2)} Td (${pdfEsc(str)}) Tj ET`);
+  const line = (x1, y1, x2, y2, w = 0.6, g = 0.78) => ops.push(`${g} G ${w} w ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
+  const para = (y, str, size, gray) => { pdfWrap(str, R - L, size, "H").forEach(l => { txt(L, y, l, size, false, gray); y -= size * 1.45; }); return y; };
+  const dl = new Date(f.day + "T12:00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const money = new Intl.NumberFormat("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(f.amount) + " €";
+  let y = H - 78;
+  ops.push(`0.976 0.78 0.31 rg ${L} ${y + 32} 56 5 re f`);
+  txt(L, y, "Dichiarazione di rifornimento carburante", 25, true); y -= 28;
+  y = para(y, "Documento interno compilato dal dipendente perché il distributore non ha rilasciato la ricevuta. Non è un documento fiscale.", 12.5, true);
+  y -= 20;
+  const rows = [["Dipendente", s.name || ""], ["Veicolo aziendale", carOn(s, f.day)], ["Data", dl], ["Ora", f.time],
+    ["Distributore e luogo", f.place], ["Contachilometri", nsIt(f.odo, 0) + " km"], ["Importo", money], ["Pagamento", "Carta carburante aziendale"]];
+  line(L, y + 8, R, y + 8, 0.8, 0.6);
+  rows.forEach(([k, v]) => { y -= 30; txt(L, y, k, 13, false, true);
+    const vs = pdfWrap(v, R - L - 190, k === "Importo" ? 19 : 15, k === "Importo" ? "HB" : "H");
+    vs.forEach((l, i) => txt(L + 190, y - i * 19, l, k === "Importo" ? 19 : 15, k === "Importo"));
+    y -= (vs.length - 1) * 19 + 15; line(L, y, R, y, 0.9); });
+  y -= 34;
+  y = para(y, `Il sottoscritto ${s.name || "_______________"} dichiara di aver effettuato il rifornimento sopra indicato con il veicolo aziendale e con la carta carburante dell'azienda, e che il distributore non ha rilasciato la ricevuta. L'addebito è verificabile sull'estratto della carta carburante.`, 14.5);
+  y -= 80;
+  txt(L, y, "Data", 13, false, true); txt(L + 270, y, "Firma", 13, false, true);
+  line(L + 38, y - 3, L + 220, y - 3, 1, 0.35); line(L + 312, y - 3, R, y - 3, 1, 0.35);
+  txt(L + 42, y + 4, new Date().toLocaleDateString("it-IT"), 14);
+  txt(L, 50, "Creato con Finanze di Famiglia", 10, false, true);
+  const body = "q 0.70711 0 0 0.70711 0 0 cm\n" + ops.join("\n") + "\nQ", objs = [];
+  const add = (dict, data = null) => { objs.push([dict, data]); return objs.length; };
+  const f1 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"), f2 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+  const c = add(`<< /Length ${body.length} >>`, body);
+  const page = add(`<< /Type /Page /Parent 5 0 R /MediaBox [0 0 419.53 595.28] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${c} 0 R >>`);
+  const pages = add(`<< /Type /Pages /Kids [${page} 0 R] /Count 1 >>`), cat = add(`<< /Type /Catalog /Pages ${pages} 0 R >>`);
+  let out = "%PDF-1.5\n%\xE2\xE3\xCF\xD3\n"; const offs = [];
+  objs.forEach(([dict, data], i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${dict}\n` + (data != null ? `stream\n${data}\nendstream\n` : "") + "endobj\n"; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map(n => String(n).padStart(10, "0") + " 00000 n \n").join("");
+  out += `trailer\n<< /Size ${objs.length + 1} /Root ${cat} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  const bytes = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
+  return { blob: new Blob([bytes], { type: "application/pdf" }), fileName: `Dichiarazione rifornimento ${f.day}.pdf` };
+}

@@ -1220,11 +1220,17 @@ function saveFuel(d) {
   guard();
   const amount = parseAmount(d.amount), day = d.day || todayIso();
   if (amount == null || isNaN(amount) || amount <= 0) throw new Error("Scrivi l'importo del rifornimento");
-  const items = fuelList().filter(x => x.id !== d.id), id = d.id || uuid4();
-  items.push({ id, day, amount: round2(amount) }); items.sort((a, b) => a.day.localeCompare(b.day));
+  const items = fuelList().filter(x => x.id !== d.id), id = d.id || uuid4(), it = { id, day, amount: round2(amount) };
+  // facoltativi: ora, contachilometri e distributore (servono per la dichiarazione di rifornimento)
+  const time = String(d.time || "").trim(), odo = String(d.odo || "").replace(/[.\s]/g, "").trim(), place = String(d.place || "").trim().slice(0, 80);
+  if (time) { if (!/^\d{1,2}:\d{2}$/.test(time)) throw new Error("Ora non valida (es. 8:30)"); it.time = time.padStart(5, "0"); }
+  if (odo) { if (!/^\d{1,7}$/.test(odo)) throw new Error("Contachilometri: scrivi solo il numero dei km"); it.odo = +odo; }
+  if (place) it.place = place;
+  items.push(it); items.sort((a, b) => a.day.localeCompare(b.day));
   write("app_settings", { key: "fuel_card", value: JSON.stringify(items) });
   return id;
 }
+const fuelComplete = f => !!(f && f.amount > 0 && f.time && f.odo && f.place);
 function deleteFuel(id) { guard(); write("app_settings", { key: "fuel_card", value: JSON.stringify(fuelList().filter(x => x.id !== id)) }); }
 function kmWeek(monIso) {
   const rs = kmRows(), by = {}; rs.forEach(r => by[r.day + "|" + r.kind] = r);
