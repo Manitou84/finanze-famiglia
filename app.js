@@ -206,7 +206,7 @@ function viewHome() {
       <button id="q-add"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.plus}</svg>Spesa</button>
       ${kmMine() ? `<button id="q-bill"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.bill}</svg>Fattura</button>`   /* chi tiene i km: dati per la fattura al posto dello scontrino */
         : `<button id="q-scan"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.receipt}</svg>Scontrino</button>`}
-      ${kmMine() ? (() => { const st = kmQuickState(); return `<button id="q-km" class="${st.todo ? "todo" : ""}" aria-label="Km lavoro: ${esc(st.text)}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.car}</svg>Km<em>${esc(st.text)}</em></button>`; })() : ""}
+      ${kmMine() ? (() => { const st = kmQuickState(); return `<button id="q-km" class="${st.todo ? "todo" : ""}" aria-label="Work, km lavoro: ${esc(st.text)}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.car}</svg>Work<em>${esc(st.text)}</em></button>`; })() : ""}
       <button id="q-list"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg>Lista</button></div>` : ""}
     ${isNow && medsOwner() ? pollenHigh().slice(0, 1).map(p => `<div class="card alert ${p.level === "molto alto" ? "late" : "wait"}" id="pol-al"><b>Graminacee ${p.level === "molto alto" ? "molto alte" : "alte"} ${p.day === todayIso() ? "oggi" : p.day === addDays(todayIso(), 1) ? "domani" : dayLabel(p.day)}</b> ${Math.round(p.v)} granuli/m³${pollenHigh().length > 1 ? " e nei giorni dopo" : ""}: tieni a portata la terapia ›</div>`).join("") : ""}
     ${isNow ? uploadReminders().map(x => `<div class="card alert ${x.lv === "30" ? "wait" : "late"}"><b>Promemoria</b> ${esc(x.text)}</div>`).join("") : ""}
@@ -401,34 +401,39 @@ function openKmHub() {
   const todayMissing = work && (!todayE || (kmEmpty(todayE) && !kmAbsence(todayE)));
   // il pulsante grande solo quando c'è qualcosa da fare: weekend, oggi o il primo giorno mancante
   const mainLbl = weFirst ? "Segna i km del weekend" : todayMissing ? "Segna i km di oggi" : miss.length ? `Completa ${dayLabel(miss[0].day)}` : "";
-  const tile = (id, icon, title, sub, cls = "") => `<button class="kh-t ${cls}" id="${id}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span><b>${title}</b>${sub ? `<em>${sub}</em>` : ""}</span></button>`;
-  const { sheet } = openSheet("Km lavoro", `
-    <div class="kh-sum">
+  // menu «Work»: barra che esce dal lato destro, con la pagina sotto oscurata; le voci aprono le schermate di sempre
+  const item = (id, icon, title, sub, cls = "") => `<button class="wk-i ${cls}" id="${id}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span><b>${title}</b>${sub ? `<em>${sub}</em>` : ""}</span><i aria-hidden="true">›</i></button>`;
+  const bg = document.createElement("div"); bg.className = "drawer-bg"; document.body.appendChild(bg);
+  const sheet = document.createElement("aside"); sheet.className = "sheet drawer"; sheet.id = "sheet"; sheet.setAttribute("aria-label", "Work");
+  sheet.innerHTML = `<div class="wk-head"><div><span>Auto aziendale e trasferte</span><h2>Work</h2></div><button class="wk-x" id="kh-x" aria-label="Chiudi">✕</button></div>
+    <div class="wk-sum">
       <div><span>Oggi</span><b>${esc(todayTxt)}</b></div>
-      <div><span>Questa settimana</span><b class="num">${fmtKm(wk.km)} km</b></div>
-      <div><span>Da completare</span><b class="${miss.length ? "out" : ""}">${miss.length ? miss.length + (miss.length === 1 ? " giorno" : " giorni") : "nessuno"}</b></div>
+      <div><span>Settimana</span><b class="num">${fmtKm(wk.km)} km</b></div>
+      <div><span>Da fare</span><b class="${miss.length ? "out" : ""}">${miss.length ? miss.length + (miss.length === 1 ? " giorno" : " giorni") : "nulla"}</b></div>
     </div>
-    ${miss.length ? `<p class="hint" style="margin:-4px 4px 12px">Mancano: ${miss.map(x => dayLabel(x.day)).join(", ")}</p>` : ""}
-    ${ed && mainLbl ? `<button class="btn primary wide" id="kh-main" style="margin-bottom:14px">${mainLbl}</button>` : ""}
-    <div class="kh-grid">
-      ${tile("kh-bill", ICON.bill, "Dati per la fattura", billingGet() ? "a tutto schermo, per ristoranti e alberghi" : "scrivili una volta, poi li mostri alla cassa", "wide kbill")}
-      ${ed ? tile("kh-today", ICON.car, "Km di oggi", esc(todayTxt)) : ""}
-      ${ed ? tile("kh-we", ICON.cal, "Km weekend", weE ? `${fmtKm(weE.private_km)} km privati` : "contachilometri della domenica") : ""}
-      ${tile("kh-week", ICON.list, "Settimana", "giorni, km e rifornimenti")}
-      ${ed ? tile("kh-fuel", ICON.fuel, "Carburante", "carta aziendale") : ""}
-      ${ed ? tile("kh-crm", ICON.crm, "Carica dal CRM", "paesi e clienti del giro") : ""}
-      ${ed ? tile("kh-off", ICON.off, "Ferie, malattia", "o permesso") : ""}
-      ${tile("kh-xls", ICON.xls, "Nota spese", "Excel da mandare o PDF da stampare", "wide")}
-    </div>
-    <button class="btn wide" id="kh-home" style="margin-top:16px">Torna al Riepilogo</button>`, null, { hub: true });
-  const go = fn => () => { sheet.remove(); document.body.style.overflow = ""; fn(); };
+    ${miss.length ? `<p class="hint" style="margin:-2px 2px 10px">Mancano: ${miss.map(x => dayLabel(x.day)).join(", ")}</p>` : ""}
+    <div class="wk-grp">Chilometri</div>
+    ${ed ? item("kh-today", ICON.car, "Km di oggi", esc(todayTxt), "hl") : ""}
+    ${ed ? item("kh-we", ICON.cal, "Km weekend", weE ? `${fmtKm(weE.private_km)} km privati` : "contachilometri della domenica") : ""}
+    ${item("kh-week", ICON.list, "Settimana", "giorni, km e rifornimenti")}
+    ${ed ? item("kh-crm", ICON.crm, "Carica dal CRM", "paesi e clienti del giro") : ""}
+    <div class="wk-grp">Spese e assenze</div>
+    ${ed ? item("kh-fuel", ICON.fuel, "Carburante", "carta aziendale") : ""}
+    ${ed ? item("kh-off", ICON.off, "Ferie, malattia", "o permesso") : ""}
+    ${item("kh-xls", ICON.xls, "Nota spese", "Excel o PDF da stampare")}`;
+  document.body.appendChild(sheet); document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => { bg.classList.add("on"); sheet.classList.add("on"); });
+  const shut = () => { sheet.remove(); bg.remove(); document.body.style.overflow = ""; };
+  const closeAll = () => { S.kmMode = false; bg.classList.remove("on"); sheet.classList.remove("on"); setTimeout(() => { shut(); render(); }, 260); };
+  const go = fn => () => { shut(); fn(); };
   const back = null;   // il ritorno al menu lo fa «‹ Indietro» (S.kmMode)
-  $("#kh-home", sheet).onclick = () => { S.kmMode = false; sheet.remove(); document.body.style.overflow = ""; render(); window.scrollTo(0, 0); };
-  if ($("#kh-main", sheet)) $("#kh-main", sheet).onclick = go(() => weFirst ? openKm("weekend") : todayMissing ? openKm("giorno") : openKm("giorno", miss[0].day));
+  $("#kh-x", sheet).onclick = closeAll; bg.onclick = closeAll;
+  // trascinando verso destra si chiude
+  let x0 = null; sheet.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; }, { passive: true });
+  sheet.addEventListener("touchend", e => { if (x0 != null && e.changedTouches[0].clientX - x0 > 70) closeAll(); x0 = null; }, { passive: true });
   if ($("#kh-today", sheet)) $("#kh-today", sheet).onclick = go(() => openKm("giorno"));
   if ($("#kh-we", sheet)) $("#kh-we", sheet).onclick = go(() => openKm("weekend"));
   $("#kh-week", sheet).onclick = go(() => openKmWeek(mondayOf(t)));
-  $("#kh-bill", sheet).onclick = () => billingGet() ? openBilling() : go(() => openBillingEdit(openKmHub))();
   if ($("#kh-fuel", sheet)) $("#kh-fuel", sheet).onclick = go(() => openFuel(null, back));
   if ($("#kh-crm", sheet)) $("#kh-crm", sheet).onclick = go(() => pickGiroCrm(back));
   if ($("#kh-off", sheet)) $("#kh-off", sheet).onclick = go(() => openAbsence(t, null, back));
