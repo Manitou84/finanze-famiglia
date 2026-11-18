@@ -747,10 +747,10 @@ function openBilling() {
   document.body.insertAdjacentHTML("beforeend", `<div id="bill" class="bill" role="dialog" aria-label="Dati per la fattura">
     <div class="bill-top"><button id="bill-x">Chiudi</button><button id="bill-ed">Modifica</button></div>
     <div class="bill-card">
+      ${b.qr ? `<div class="bc-qr"><img src="${b.qr}" alt="QR code per la fattura"><span>Inquadra il codice per i dati di fatturazione</span></div>` : ""}
       <div class="bc-head"><span class="bc-pill">Fattura intestata a</span>
         <button class="bc-name" data-k="name">${esc(b.name)}</button>
         ${b.address ? `<button class="bc-addr" data-k="address">${esc(b.address).replace(/\n/g, "<br>")}</button>` : ""}</div>
-      ${b.qr ? `<div class="bc-qr"><img src="${b.qr}" alt="QR code per la fattura"><span>Inquadra il codice per i dati di fatturazione</span></div>` : ""}
       <div class="bc-grid">${same ? tile("vat", "P.IVA e C.F.") + tile("sdi", "Codice SDI", "sdi") : tile("vat", "Partita IVA") + tile("cf", "Codice fiscale") + tile("sdi", "Codice SDI", "sdi wide")}${tile("pec", "PEC", "wide pec")}${tile("note", "Note", "wide")}</div>
     </div>
     <p class="bill-hint">Tocca un dato per copiarlo · lo schermo resta acceso</p></div>`);
