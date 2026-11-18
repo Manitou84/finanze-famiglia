@@ -1,0 +1,1770 @@
+/* ==========================================================================
+   Finanze di Famiglia — web app per iPhone: schermate
+   ========================================================================== */
+"use strict";
+
+const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+const MB = MESI.map(m => m.slice(0, 3));
+const GG = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"];
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
+const eur = n => fmt.format(n || 0);
+const amountText = n => n == null ? "" : String(n).replace(".", ",");
+const thisMonth = () => todayIso().slice(0, 7);
+const monthName = m => `${MESI[+m.slice(5) - 1]} ${m.slice(0, 4)}`;
+const shortDate = iso => `${+iso.slice(8)} ${MB[+iso.slice(5, 7) - 1]}`;
+let toastT;
+function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2800); }
+const ICON = {
+  home: '<path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/>',
+  list: '<path d="M5 7h14M5 12h14M5 17h9"/>',
+  cal: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  more: '<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>',
+  fam: '<circle cx="8" cy="8" r="2.6"/><circle cx="16" cy="8" r="2.6"/><path d="M3.5 19c0-3 2-5 4.5-5s4.5 2 4.5 5M11.5 19c0-3 2-5 4.5-5s4.5 2 4.5 5"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
+  cart: '<path d="M3 5h2.5l2 10h10.5l2-7H7"/><circle cx="9.5" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
+  cam: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  receipt: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/>',
+  car: '<path d="M5 17h14l-1.5-6h-11z"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="18" r="1.6"/><path d="M7 11l1.5-4h7l1.5 4"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  work: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+  bill: '<path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  fuel: '<path d="M5 20V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v15M4 20h11M5 10h9"/><path d="M14 8l3 3v6a1.5 1.5 0 0 0 3 0v-7l-3-3"/>',
+  crm: '<path d="M12 21s-6-5.4-6-10a6 6 0 0 1 12 0c0 4.6-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
+  off: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  xls: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 12l4 5M14 12l-4 5"/>',
+  ask: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.6 1.3c0 1.7-2.1 2-2.1 3.2M12 17h.01"/>',
+};
+const S = { view: "home", month: thisMonth(), search: "" };
+
+/* ==========================================================================
+   Accesso
+   ========================================================================== */
+function renderLogin(mode, msg) {
+  const first = mode === "primo", reset = mode === "reset", newpw = mode === "nuova";
+  $("#app").innerHTML = `<div class="login">
+    <h1>Finanze di Famiglia</h1>
+    <p class="lead">${newpw ? "Scegli la nuova password." : first ? "Sei stato invitato? Crea la tua password con l'email dell'invito."
+      : reset ? "Ti mandiamo un'email con il link per scegliere una nuova password." : "Accedi con l'utente della tua famiglia."}</p>
+    <form id="lf">
+      ${newpw ? "" : `<label class="f"><span>Email</span><input type="email" id="le" autocomplete="username" required></label>`}
+      ${reset ? "" : `<label class="f"><span>${first || newpw ? "Nuova password (almeno 8 caratteri)" : "Password"}</span>
+        <input type="password" id="lp" autocomplete="${first || newpw ? "new-password" : "current-password"}" required></label>`}
+      ${first || newpw ? `<label class="f"><span>Ripeti la password</span><input type="password" id="lp2" autocomplete="new-password" required></label>` : ""}
+      <p class="err" id="lerr">${esc(msg || "")}</p>
+      <button class="btn primary wide" id="lb">${newpw ? "Salva la password" : first ? "Crea la password" : reset ? "Mandami l'email" : "Accedi"}</button>
+    </form>
+    ${newpw ? "" : `<p style="text-align:center;margin-top:18px;display:grid;gap:4px">
+      ${mode ? `<button class="btn link" data-m="">Ho già un account: accedi</button>` : ""}
+      ${!first ? `<button class="btn link" data-m="primo">Primo accesso? Crea la tua password</button>` : ""}
+      ${!reset ? `<button class="btn link" data-m="reset">Password dimenticata?</button>` : ""}</p>`}
+  </div>`;
+  $$("[data-m]").forEach(b => b.onclick = () => renderLogin(b.dataset.m));
+  $("#lf").onsubmit = async e => {
+    e.preventDefault();
+    const b = $("#lb"), label = b.textContent; b.disabled = true;
+    const fail = m => { b.disabled = false; b.textContent = label; $("#lerr").textContent = m; };
+    try {
+      if ((first || newpw) && $("#lp").value !== $("#lp2").value) return fail("Le due password non coincidono");
+      if ((first || newpw) && $("#lp").value.length < 8) return fail("La password deve avere almeno 8 caratteri");
+      if (reset) { b.textContent = "Invio…"; await recover($("#le").value); return renderLogin("", "Email inviata: apri il link che trovi nella posta."); }
+      if (newpw) { b.textContent = "Salvataggio…"; await updatePassword($("#lp").value); await enterHousehold(); toast("Password aggiornata"); return renderShell(); }
+      if (first) {
+        b.textContent = "Creazione dell'account…";
+        const r = await signup($("#le").value, $("#lp").value);
+        if (r.confirm) return renderLogin("", "Controlla la tua email e apri il link di conferma: poi entri direttamente.");
+        return renderShell();
+      }
+      b.textContent = "Accesso e scaricamento dati…";
+      await login($("#le").value, $("#lp").value);
+      renderShell();
+    } catch (err) {
+      fail(err instanceof Offline ? "Nessuna connessione a internet" : /already|registered/i.test(err.message)
+        ? "Questa email ha già un account: accedi o recupera la password" : err.message);
+    }
+  };
+}
+
+/* ==========================================================================
+   Struttura
+   ========================================================================== */
+function renderShell() {
+  $("#app").innerHTML = `
+    <header class="top">
+      <div class="t"><h1 id="ttl"></h1><div class="sub" id="sub"></div></div>
+      <div class="mnav" id="mnav"><button id="mp" aria-label="Mese precedente">‹</button><button id="mn" aria-label="Mese successivo">›</button></div>
+      <button class="gear" id="gear" aria-label="Impostazioni"><svg viewBox="0 0 24 24">${ICON.gear}</svg></button>
+    </header>
+    <main id="view"></main>
+    <nav class="tabbar">
+      <button data-v="home"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.home}</svg></span>Riepilogo</button>
+      <button data-v="movimenti"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.list}</svg></span>Movimenti</button>
+      <button class="add" id="addbtn" aria-label="Aggiungi una spesa"><span>+</span></button>
+      <button data-v="spesa"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg></span>Spesa</button>
+      <button data-v="famiglia"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.fam}</svg></span>Famiglia</button>
+    </nav>`;
+  $$(".tabbar [data-v]").forEach(b => b.onclick = () => { S.view = b.dataset.v; render(); window.scrollTo(0, 0); });
+  $("#addbtn").onclick = () => openTx();
+  $("#gear").onclick = () => { S.view = "altro"; render(); window.scrollTo(0, 0); };
+  $("#mp").onclick = () => { S.month = shiftMonth(S.month, -1); render(); };
+  $("#mn").onclick = () => { S.month = shiftMonth(S.month, 1); render(); };
+  render();
+}
+
+function statusLine() {
+  const p = pendingCount();
+  if (syncing) return `<span class="dotsync busy"></span>Sincronizzazione…`;
+  if (syncError === "offline") return `<span class="dotsync wait"></span>Offline${p ? `, ${p} da inviare` : ""}`;
+  if (syncError) return `<span class="dotsync bad"></span>Errore di sincronizzazione`;
+  if (p) return `<span class="dotsync wait"></span>${p} da inviare`;
+  if (DB.lastSync) { const d = new Date(DB.lastSync); return `<span class="dotsync"></span>Aggiornato alle ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+  return "";
+}
+
+function render() {
+  if (!$("#view")) return;
+  if (!S.keepKm && !document.querySelector(".sheet")) S.kmMode = false;   // uscito dal menu Km
+  $$(".tabbar [data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === (S.view === "scadenze" ? "home" : S.view)));
+  const withMonth = ["home", "movimenti", "scadenze"].includes(S.view);
+  $("#mnav").style.display = withMonth ? "" : "none";
+  $("#gear").classList.toggle("on", S.view === "altro");
+  $("#ttl").textContent = withMonth ? monthName(S.month).replace(/^./, c => c.toUpperCase()) : S.view === "famiglia" ? "Famiglia" : S.view === "spesa" ? "Lista della spesa" : "Impostazioni";
+  $("#sub").innerHTML = `${esc(DB.hhName || "")} · ${statusLine()}`;
+  ({ home: viewHome, movimenti: viewMovimenti, scadenze: viewScadenze, spesa: viewSpesa, famiglia: viewFamiglia, altro: viewAltro })[S.view]();
+  keepAwake();
+}
+
+/* Schermo sempre acceso solo nella lista della spesa (Screen Wake Lock: l'iPhone non si spegne finché la lista è aperta;
+   si rilascia da solo cambiando scheda, chiudendo l'app o dopo 45 minuti senza toccare nulla). */
+let wakeLock = null, wakeTouched = Date.now();
+function wakeWanted() { try { return localStorage.getItem("finanze-wake") !== "0"; } catch (e) { return true; } }
+async function keepAwake() {
+  const want = DB.session && S.view === "spesa" && wakeWanted() && document.visibilityState === "visible" && !$("#lock")
+    && Date.now() - wakeTouched < 45 * 60000;
+  if (want && !wakeLock && "wakeLock" in navigator) {
+    try { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } catch (e) { wakeLock = null; }
+  } else if (!want && wakeLock) { try { await wakeLock.release(); } catch (e) { } wakeLock = null; }
+}
+["touchstart", "click"].forEach(ev => document.addEventListener(ev, () => { wakeTouched = Date.now(); if (S.view === "spesa" && !wakeLock) keepAwake(); }, { passive: true }));
+setInterval(keepAwake, 60000);
+listeners.add(() => { if ($("#sub")) $("#sub").innerHTML = `${esc(DB.hhName || "")} · ${statusLine()}`; });
+
+/* ==========================================================================
+   Riepilogo
+   ========================================================================== */
+function donut(rows, total) {
+  const R = 52, C = 2 * Math.PI * R; let off = 0;
+  const arcs = rows.map(r => { const len = total ? r.v / total * C : 0;
+    const a = `<circle r="${R}" cx="66" cy="66" fill="none" stroke="${r.color}" stroke-width="20" stroke-dasharray="${Math.max(0, len - 2)} ${C}" stroke-dashoffset="${-off}" transform="rotate(-90 66 66)"/>`;
+    off += len; return a; }).join("");
+  return `<svg viewBox="0 0 132 132" width="132" height="132" role="img" aria-label="Spese per categoria">
+    <circle r="${R}" cx="66" cy="66" fill="none" stroke="var(--line)" stroke-width="20"/>${arcs}
+    <text x="66" y="64" text-anchor="middle" style="font:700 15px var(--round);fill:var(--text)">${eur(total).replace(",00", "")}</text>
+    <text x="66" y="82" text-anchor="middle" style="font-size:10px;fill:var(--muted)">spese</text></svg>`;
+}
+
+function viewHome() {
+  const d = monthData(S.month), isNow = S.month === thisMonth(), mName = MESI[+S.month.slice(5) - 1];
+  const saved = round2(d.income - d.expense);
+  const intro = isNow ? mName[0].toUpperCase() + mName.slice(1) + " finora" : "A " + mName;
+  const sentence = d.income || d.expense
+    ? `${intro}: sono entrati <span class="in">${eur(d.income)}</span>, avete speso <span class="out">${eur(d.expense)}</span>${saved >= 0
+      ? ` e messo da parte <span class="sv">${eur(saved)}</span>.` : `, ${eur(-saved)} più delle entrate.`}`
+    : `${intro}: ancora nessun movimento.`;
+  const top = {}; d.tx.filter(t => t.kind === "spesa").forEach(t => { let c = catById(t.category_id); if (c && c.parent_id && catById(c.parent_id)) c = catById(c.parent_id);
+    const k = c ? c.id : "none"; top[k] = top[k] || { name: c ? c.name : "Senza categoria", color: c ? c.color : "#94A099", v: 0 }; top[k].v += t.amount; });
+  let rowsCat = Object.values(top).sort((a, b) => b.v - a.v);
+  if (rowsCat.length > 5) rowsCat = [...rowsCat.slice(0, 5), { name: "Altro", color: "#B8C2BB", v: rowsCat.slice(5).reduce((s, r) => s + r.v, 0) }];
+  const ser = series(S.month, 6); const max = Math.max(1, ...ser.flatMap(s => [s.income, s.expense]));
+  const buds = cats().filter(c => d.budgets[c.id] != null && !c.deleted_at).map(c => ({ c, b: d.budgets[c.id], s: d.spentAll[c.id] || 0 }))
+    .sort((x, y) => y.s / y.b - x.s / x.b);
+  const in30 = addDays(todayIso(), 30);
+  const up = recurringView(S.month).filter(r => r.status === "attiva" && r.next_due && r.next_due <= in30)
+    .concat(autoDeadlines().filter(x => x.due <= in30).map(x => ({ name: `${x.label} ${x.vehicle}`, next_due: x.due, amount: null, auto: true, tag: "auto" })))
+    .concat(tripDeadlines().filter(x => x.due <= in30).map(x => ({ name: `${x.label}, ${x.trip}`, next_due: x.due, amount: null, auto: true, tag: "vacanza" })))
+    .concat(familyDeadlines().filter(x => x.due <= in30).map(x => ({ name: x.person !== "Famiglia" ? `${x.label}, ${x.person}` : x.label, next_due: x.due, amount: null, auto: true, tag: "famiglia" })))
+    .sort((a, b) => a.next_due.localeCompare(b.next_due)).slice(0, 7);
+  const acc = balances(); const tot = acc.reduce((s, a) => s + a.balance, 0);
+  const sumIO = Math.max(d.income, d.expense) || 1;
+  const dl = autoDeadlines();
+  const hr = new Date().getHours(), me = greetName();
+  const budTot = cats().filter(c => d.budgets[c.id] != null && !c.deleted_at && !(c.parent_id && d.budgets[c.parent_id] != null)).reduce((a, c) => a + (+d.budgets[c.id] || 0), 0);
+  const budPct = budTot ? Math.round(d.expense / budTot * 100) : 0;
+  const daysLeft = isNow ? (new Date(+S.month.slice(0, 4), +S.month.slice(5), 0).getDate() - new Date().getDate() + 1) : 0;
+  $("#view").innerHTML = `
+    <section class="hn-hero" aria-label="Saldo e mese">
+      <div class="hello">${isNow ? (hr < 13 ? "Buongiorno" : hr < 18 ? "Buon pomeriggio" : "Buonasera") : intro}</div>
+      <div class="name">${isNow ? (me ? "Ciao, " + esc(me) : "Ciao") : esc(monthName(S.month).replace(/^./, c => c.toUpperCase()))}</div>
+      <div class="lbl">Saldo sui conti</div><div class="big num">${eur(tot)}</div>
+      <div class="duo2"><div><span>Entrate</span><b class="num pin">+${eur(d.income)}</b></div><div><span>Uscite</span><b class="num pout">−${eur(d.expense)}</b></div></div>
+    </section>
+    ${canEdit() ? `<div class="hn-quick">
+      <button id="q-add"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.plus}</svg>Spesa</button>
+      ${kmMine() ? `<button id="q-bill"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.bill}</svg>Fattura</button>`   /* chi tiene i km: dati per la fattura al posto dello scontrino */
+        : `<button id="q-scan"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.receipt}</svg>Scontrino</button>`}
+      ${kmMine() ? (() => { const st = kmQuickState(); return `<button id="q-km" class="${st.todo ? "todo" : ""}" aria-label="Work, km lavoro: ${esc(st.text)}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.car}</svg>Work<em>${esc(st.text)}</em></button>`; })() : ""}
+      <button id="q-list"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg>Lista</button></div>` : ""}
+    ${isNow && medsOwner() ? pollenHigh().slice(0, 1).map(p => `<div class="card alert ${p.level === "molto alto" ? "late" : "wait"}" id="pol-al"><b>Graminacee ${p.level === "molto alto" ? "molto alte" : "alte"} ${p.day === todayIso() ? "oggi" : p.day === addDays(todayIso(), 1) ? "domani" : dayLabel(p.day)}</b> ${Math.round(p.v)} granuli/m³${pollenHigh().length > 1 ? " e nei giorni dopo" : ""}: tieni a portata la terapia ›</div>`).join("") : ""}
+    ${isNow ? uploadReminders().map(x => `<div class="card alert ${x.lv === "30" ? "wait" : "late"}"><b>Promemoria</b> ${esc(x.text)}</div>`).join("") : ""}
+    ${dl.filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}"><b>${esc(x.label)} ${esc(x.vehicle)}</b>
+      ${x.days < 0 ? `scaduto il ${shortDate(x.due)}` : x.days === 0 ? "scade oggi" : `scade il ${shortDate(x.due)}, tra ${x.days} ${x.days === 1 ? "giorno" : "giorni"}`}</div>`).join("")}
+    ${familyDeadlines().filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}" data-gofam><b>${esc(x.label)}${x.person !== "Famiglia" ? " di " + esc(x.person) : ""}</b>
+      ${x.days < 0 ? `scaduto il ${shortDate(x.due)}` : x.days === 0 ? "scade oggi" : `scade il ${shortDate(x.due)}, tra ${x.days} ${x.days === 1 ? "giorno" : "giorni"}`}</div>`).join("")}
+    ${tripsView().filter(t => t.state === "in corso").map(t => `<div class="card alert ok" data-gotrip="${t.id}" style="border-left:5px solid ${t.color}"><b>In vacanza: ${esc(t.name)}</b>
+      ${eur(t.spent)} spesi${t.budget ? ` di ${eur(t.budget)}` : ""}${t.per_day ? `, ${eur(t.per_day)} al giorno` : ""} ›</div>`).join("")}
+    ${tripDeadlines().filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}" data-gotrip="${x.trip_id}"><b>${esc(x.label)}</b> per ${esc(x.trip)}: entro il ${shortDate(x.due)}${x.days > 0 ? `, tra ${x.days} ${x.days === 1 ? "giorno" : "giorni"}` : ""}</div>`).join("")}
+    ${budTot ? `<div class="card hn-bud"><div class="top2"><h2>Budget di ${mName}</h2><span class="muted num">${budPct}%</span></div>
+      <div class="track ${budPct > 100 ? "over" : ""}"><div style="width:${Math.min(100, budPct)}%"></div></div>
+      <p>${d.expense <= budTot ? `Restano <b class="num">${eur(budTot - d.expense)}</b>${daysLeft ? ` per ${daysLeft} ${daysLeft === 1 ? "giorno" : "giorni"}` : ""}` : `<b class="out num">${eur(d.expense - budTot)}</b> oltre il budget`}</p></div>` : ""}
+    <div class="card"><div class="card-h2"><h2>Ultimi movimenti</h2>${d.tx.length ? `<button class="btn link" id="all-tx">Tutti</button>` : ""}</div>
+      ${d.tx.length ? `<div class="list">${d.tx.filter(t => kmMine() || !workKind(t)).slice(0, 4).map(txRow).join("")}</div>` : `<p class="muted">Nessun movimento.</p>`}</div>
+    ${homeForecastCard()}
+    ${homeMedsCard()}
+    ${S.month === thisMonth() && new Date().getDate() <= 10 && !S.sumSeen ? homeSummaryCard() : ""}
+    ${homeGoalsCard()}
+
+    <div class="card"><h2>Dove sono andati i soldi</h2>
+      ${rowsCat.length ? `<div class="donut-wrap">${donut(rowsCat, d.expense)}<div class="lst">${rowsCat.map(r => `<div class="row" style="padding:6px 0">
+        <span class="dot" style="background:${r.color}"></span><span class="n">${esc(r.name)}</span><b class="num">${eur(r.v).replace(",00", "")}</b></div>`).join("")}</div></div>`
+        : `<p class="muted">Nessuna spesa ${isNow ? "per ora" : "in questo mese"}.</p>`}
+    </div>
+
+    <div class="card"><h2>Ultimi 6 mesi</h2>
+      <div class="chart">${ser.map(s => `<div class="m ${s.month === S.month ? "cur" : ""}">
+        <div class="bars"><div style="height:${s.income / max * 100}%;background:var(--in)"></div><div style="height:${s.expense / max * 100}%;background:var(--out)"></div></div>
+        <span class="lbl">${MB[+s.month.slice(5) - 1]}</span></div>`).join("")}</div>
+      <div class="legend" style="margin:10px 0 0"><span><i class="dot" style="background:var(--in)"></i>Entrate</span><span><i class="dot" style="background:var(--out)"></i>Spese</span></div>
+    </div>
+
+    ${buds.length ? `<div class="card"><h2>Budget</h2>${buds.map(({ c, b, s }) => { const pct = Math.min(100, s / b * 100);
+      return `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:5px">
+        <span>${esc(c.name)}</span><span class="num ${s > b ? "out" : "muted"}">${eur(s)} di ${eur(b)}</span></div>
+        <div class="bar"><div class="${s > b ? "over" : pct >= 80 ? "warn" : ""}" style="width:${pct}%"></div></div></div>`; }).join("")}</div>` : ""}
+
+    <div class="card"><h2>Prossime scadenze</h2>
+      ${up.length ? up.map(r => `<div class="row"><span class="muted num" style="width:50px">${shortDate(r.next_due)}</span><span class="n">${esc(r.name)}</span>
+        ${r.next_due < todayIso() ? `<span class="badge late">${r.auto ? "Scaduta" : "Non trovata"}</span>` : ""}${r.auto ? `<span class="badge wait">${r.tag}</span>` : `<b class="num">${eur(r.amount)}</b>`}</div>`).join("")
+        : `<p class="muted">Nessuna scadenza nei prossimi 30 giorni.</p>`}
+      <button class="btn link" id="all-dl">Tutte le scadenze ›</button>
+    </div>
+
+    <div class="card"><h2>Conti</h2>${acc.map(a => `<div class="row acc-w" data-acc="${a.id}"><span class="n">${esc(a.name)}</span><b class="num ${a.balance < 0 ? "out" : ""}">${eur(a.balance)}</b>${canEdit() ? '<span class="muted" style="margin-left:8px">›</span>' : ""}</div>`).join("")}
+      <div class="row"><span class="n muted">Totale</span><b class="num">${eur(tot)}</b></div>
+      ${fundAccount() && kmMine() ? `<div class="row"><span class="n muted">di cui fondo lavoro (soldi dell'azienda)</span><span class="num muted">${eur(fundAvailable())}</span></div>` : ""}</div>`;
+  $$("[data-gofam]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "scadenze"; render(); window.scrollTo(0, 0); });
+  if ($("#fc-open")) $("#fc-open").onclick = openForecast;
+  bindHomeKm(); bindHomeMeds();
+  if ($("#q-add")) $("#q-add").onclick = () => openTx();
+  if ($("#q-bill")) $("#q-bill").onclick = () => billingGet() ? openBilling() : openBillingEdit();
+  if ($("#q-scan")) $("#q-scan").onclick = () => { openTx(); const f = $("#scanf"); if (f) f.click(); };
+  if ($("#q-km")) $("#q-km").onclick = () => openKmHub();
+  if ($("#q-list")) $("#q-list").onclick = () => { S.view = "spesa"; render(); window.scrollTo(0, 0); };
+  if ($("#pol-al")) $("#pol-al").onclick = () => medsGate(() => openMeds("cal"));
+  pollenRefresh();
+  if ($("#sum-hide")) $("#sum-hide").onclick = e => { e.stopPropagation(); S.sumSeen = true; render(); };
+  if (canEdit()) $$("[data-acc]").forEach(el => el.onclick = () => openBalanceW(el.dataset.acc));
+  $$("[data-goal]").forEach(el => el.onclick = () => openGoalW(el.dataset.goal));
+  if ($("#g-new")) $("#g-new").onclick = () => openGoalEditW();
+  $("#all-dl").onclick = () => { S.view = "scadenze"; render(); window.scrollTo(0, 0); };
+  $$("[data-gotrip]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "vacanze"; render(); openTripDetail(el.dataset.gotrip); });
+  if ($("#all-tx")) $("#all-tx").onclick = () => { S.view = "movimenti"; render(); window.scrollTo(0, 0); };
+  bindTxRows(d.tx);
+}
+
+/* ==========================================================================
+   Previsione e obiettivi (Riepilogo)
+   ========================================================================== */
+function homeSummaryCard() {
+  const m = monthSummary(); if (!m.highlights.length) return "";
+  return `<div class="card sum-w"><div class="row" style="padding:0;border:0"><h2 class="n" style="margin:0">Com'è andato ${MESI[+m.month.slice(5) - 1]}</h2>
+    <button class="btn link" id="sum-hide">Nascondi</button></div><ul>${m.highlights.map(h => `<li>${esc(h)}</li>`).join("")}</ul></div>`;
+}
+function homeForecastCard() {
+  if (S.month !== thisMonth()) return "";
+  const f = forecast(), m = f.months[0]; if (!m) return "";
+  const low = m.end < f.settings.threshold;
+  return `<div class="card fc-w ${low ? "low" : ""}" id="fc-open"><div class="row" style="padding:0;border:0"><span class="n"><span class="muted" style="font-size:13px">Previsto a fine ${MESI[+m.month.slice(5) - 1]}</span><br>
+      <b class="num" style="font-size:24px">${eur(m.end)}</b></span><span class="muted">›</span></div>
+    <div class="muted fc-sub" style="font-size:12px;margin-top:4px"><span>Oggi ${eur(f.balance)}</span>${f.months[1] ? `<span>Fine ${MESI[+f.months[1].month.slice(5) - 1]} ${eur(f.months[1].end)}</span>` : ""}</div>
+    ${f.warning ? `<div class="badge late" style="margin-top:8px">Sotto i ${eur(f.settings.threshold)} a fine ${MESI[+f.warning.month.slice(5) - 1]}</div>` : ""}</div>`;
+}
+function openForecast() {
+  const f = forecast();
+  openSheet("Previsione", `
+    <div class="card"><div class="muted" style="font-size:13px">Oggi sui conti (${f.accounts.map(a => esc(a.name)).join(", ")})</div><b class="num" style="font-size:24px">${eur(f.balance)}</b></div>
+    ${f.months.map((m, i) => `<div class="card"><h2>${i === 0 ? "Resto di " : ""}${MESI[+m.month.slice(5) - 1]} ${m.month.slice(0, 4)}</h2>
+      <div class="row"><span class="n">Partenza</span><b class="num">${eur(m.start)}</b></div>
+      ${m.income_recurring ? `<div class="row"><span class="n">Entrate ricorrenti</span><b class="num in">+${eur(m.income_recurring)}</b></div>` : ""}
+      <div class="row"><span class="n">Entrate abituali</span><b class="num in">+${eur(m.income_usual)}</b></div>
+      <div class="row"><span class="n">Spese fisse e scadenze</span><b class="num out">−${eur(m.fixed)}</b></div>
+      <div class="row"><span class="n">Spese di tutti i giorni<br><span class="muted" style="font-size:12px">${m.days} gg × ${eur(f.daily)}</span></span><b class="num out">−${eur(m.variable)}</b></div>
+      <div class="row"><span class="n"><b>Previsto a fine mese</b></span><b class="num ${m.end < f.settings.threshold ? "out" : ""}">${eur(m.end)}</b></div>
+      ${f.goals_monthly ? `<p class="hint">Dopo aver messo da parte per gli obiettivi: ${eur(m.after_goals)}</p>` : ""}
+      ${m.items.length ? `<details ${i === 0 ? "open" : ""}><summary>${m.items.length} voci in calendario</summary>${m.items.map(x => `<div class="row"><span class="muted num" style="width:50px">${shortDate(x.date)}</span>
+        <span class="n">${esc(x.name)}${x.late ? ' <span class="badge late">in ritardo</span>' : ""}</span><b class="num ${x.amount > 0 ? "in" : ""}">${x.amount == null ? "?" : (x.amount > 0 ? "+" : "−") + eur(Math.abs(x.amount))}</b></div>`).join("")}</details>` : ""}</div>`).join("")}
+    <p class="hint">Stima: saldo di oggi, più entrate ricorrenti e abituali, meno spese fisse, scadenze e la media delle spese di tutti i giorni (ultimi ${f.span_days} giorni). Soglia e periodo si cambiano dal Mac.</p>`);
+}
+function homeGoalsCard() {
+  const g = goalsView(), act = g.goals.filter(x => x.status === "attivo");
+  if (!act.length && !canEdit()) return "";
+  return `<div class="card"><h2>Obiettivi</h2>
+    ${act.map(x => `<div class="goal-w" data-goal="${x.id}"><div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:5px"><span>${esc(x.name)}</span>
+      <span class="num muted">${eur(x.saved)} di ${eur(x.target)}</span></div>
+      <div class="bar"><div style="width:${x.pct}%;background:${x.color}"></div></div>
+      <div class="muted" style="font-size:12px;margin-top:4px">${x.late ? `<span class="out">scadenza passata</span>` : x.monthly ? `${eur(x.monthly)} al mese · entro ${shortDate(x.due_date)} ${x.due_date.slice(0, 4)}` : x.left ? `mancano ${eur(x.left)}` : ""}</div></div>`).join("")
+      || `<p class="hint">Fondo emergenze, auto nuova, una vacanza: segna cifra e data e ti dico quanto mettere da parte ogni mese.</p>`}
+    ${canEdit() ? `<button class="btn link" id="g-new">+ Nuovo obiettivo</button>` : ""}</div>`;
+}
+function openGoalW(id) {
+  const g = goalsView().goals.find(x => x.id === id); if (!g) return;
+  const { sheet } = openSheet(g.name, `
+    <div class="card" style="text-align:center"><b class="num" style="font-size:28px">${eur(g.saved)}</b><div class="muted">di ${eur(g.target)} · ${Math.round(g.pct)}%</div>
+      <div class="bar" style="margin:12px 0 6px"><div style="width:${g.pct}%;background:${g.color}"></div></div>
+      <div class="muted" style="font-size:13px">${g.status === "raggiunto" ? "Obiettivo raggiunto 🎉" : g.late ? "Scadenza passata" : g.monthly ? `Servono ${eur(g.monthly)} al mese per ${g.months_left} ${g.months_left === 1 ? "mese" : "mesi"}` : ""}</div></div>
+    ${canEdit() && g.status === "attivo" ? `<input class="amount num" id="gw-a" inputmode="decimal" placeholder="0,00" value="${g.monthly ? amountText(g.monthly) : ""}" aria-label="Importo"><div class="amount-line">euro</div>
+      <label class="f"><span>Nota (facoltativa)</span><input type="text" id="gw-n"></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px"><button class="btn primary" id="gw-in">Metti da parte</button><button class="btn" id="gw-out">Preleva</button></div>` : ""}
+    ${g.moves.length ? `<div class="card"><h2>Movimenti</h2>${g.moves.slice(0, 30).map(m => `<div class="row"><span class="muted num" style="width:50px">${shortDate(m.occurred_on)}</span>
+      <span class="n">${esc(m.note || (m.amount > 0 ? "Messo da parte" : "Prelevato"))}<br><span class="muted" style="font-size:12px">${esc(m.updated_by || "")}</span></span>
+      <b class="num ${m.amount > 0 ? "in" : "out"}">${m.amount > 0 ? "+" : "−"}${eur(Math.abs(m.amount))}</b>${canEdit() ? `<button class="btn link" data-gd="${m.id}" style="margin-left:8px">✕</button>` : ""}</div>`).join("")}</div>` : ""}
+    ${canEdit() ? `<button class="btn wide" id="gw-edit">Modifica obiettivo</button>` : ""}`);
+  const reopen = msg => { sheet.remove(); if (msg) toast(msg); openGoalW(id); };
+  const move = w => { try { const r = addGoalMove(id, $("#gw-a").value, $("#gw-n").value, w); reopen(r ? `Obiettivo raggiunto! 🎉` : w ? "Prelevato" : "Messo da parte"); } catch (e) { $("#se", sheet).textContent = e.message; } };
+  if ($("#gw-in", sheet)) { $("#gw-in", sheet).onclick = () => move(false); $("#gw-out", sheet).onclick = () => move(true); }
+  $$("[data-gd]", sheet).forEach(b => b.onclick = () => { if (confirm("Eliminare questo movimento?")) { deleteGoalMove(b.dataset.gd); reopen(); } });
+  if ($("#gw-edit", sheet)) $("#gw-edit", sheet).onclick = () => { sheet.remove(); openGoalEditW(DB.t.goals[id]); };
+}
+function openGoalEditW(g) {
+  g = g || { status: "attivo" };
+  openSheet(g.id ? "Modifica obiettivo" : "Nuovo obiettivo", `
+    <label class="f"><span>Nome</span><input type="text" id="ge-n" value="${esc(g.name)}" placeholder="Es. Fondo emergenze"></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="f"><span>Cifra (€)</span><input type="text" inputmode="decimal" id="ge-t" value="${g.target ? esc(amountText(g.target)) : ""}"></label>
+      <label class="f"><span>Entro il</span><input type="date" id="ge-d" value="${esc(g.due_date || "")}"></label></div>
+    ${g.id ? `<label class="f"><span>Stato</span></label><div class="seg" id="ge-s" style="margin-bottom:14px">${[["attivo", "Attivo"], ["raggiunto", "Raggiunto"], ["archiviato", "Archiviato"]].map(([k, l]) => `<button data-s="${k}">${l}</button>`).join("")}</div>`
+      : `<label class="f"><span>Già messi da parte (facoltativo)</span><input type="text" inputmode="decimal" id="ge-a" placeholder="0,00"></label>`}
+    <label class="f"><span>Note</span><input type="text" id="ge-no" value="${esc(g.notes)}"></label>
+    <p class="hint">I versamenti tengono il conto di quanto è già da parte: non spostano soldi tra i conti.</p>`,
+    () => { const r = saveGoal({ id: g.id, name: $("#ge-n").value, target: $("#ge-t").value, due_date: $("#ge-d").value, status: st, notes: $("#ge-no").value, start_amount: $("#ge-a") ? $("#ge-a").value : null });
+      setTimeout(() => openGoalW(r.id), 0); return "Salvato"; },
+    g.id ? { del: { label: "Elimina obiettivo", confirm: `Eliminare «${g.name}» e i suoi movimenti?`, run: () => { deleteGoal(g.id); return "Eliminato"; } } } : {});
+  let st = g.status;
+  $$("#ge-s button").forEach(b => { b.classList.toggle("on", b.dataset.s === st); b.onclick = () => { st = b.dataset.s; $$("#ge-s button").forEach(x => x.classList.toggle("on", x === b)); }; });
+  if (!g.id) setTimeout(() => $("#ge-n").focus(), 250);
+}
+
+function openBalanceW(id) {
+  const a = balances().find(x => x.id === id); if (!a) return;
+  const cash = a.type === "contanti";
+  openSheet(a.name, `
+    <p class="hint">${cash ? "Quanti contanti avete adesso?" : "Scrivi il saldo disponibile che vedi oggi sull'app della banca."} Lo allineo correggendo il saldo iniziale, senza creare movimenti finti.</p>
+    <div class="card"><div class="muted" style="font-size:13px">Secondo l'app</div><b class="num" style="font-size:22px">${eur(a.balance)}</b></div>
+    <input class="amount num" id="bw-v" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Saldo di oggi"><div class="amount-line">${cash ? "contanti contati" : "saldo in banca oggi"}</div>
+    <p class="hint" id="bw-d"></p>`,
+    () => { const d = setAccountBalance(id, $("#bw-v").value); return d ? `Allineato (correzione di ${eur(d)})` : "Coincideva già"; }, { saveLabel: "Allinea" });
+  setTimeout(() => $("#bw-v").focus(), 250);
+  $("#bw-v").oninput = () => { const v = parseAmount($("#bw-v").value); if (v == null || isNaN(v)) { $("#bw-d").textContent = ""; return; }
+    const d = round2(v - a.balance); $("#bw-d").textContent = d === 0 ? "Coincide." : `Differenza: ${d > 0 ? "+" : "−"}${eur(Math.abs(d))}`; };
+}
+
+/* ==========================================================================
+   Km dell'auto aziendale
+   ========================================================================== */
+const GIORNI_L = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+const dayLabel = iso => { const d = new Date(iso + "T12:00:00"); return `${GIORNI_L[d.getDay()]} ${d.getDate()} ${MESI[d.getMonth()]}`; };
+const fmtKm = v => v == null ? "—" : new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 }).format(v);
+function lastSunday() { const t = todayIso(), d = new Date(t + "T12:00:00").getDay(); return d === 0 ? t : addDays(t, -d); }
+/* Km lavoro: tutto dietro il pulsante «Km» del Riepilogo */
+function kmQuickState() {
+  const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
+  const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
+  const weNeeded = (dow === 0 || dow === 1) && rs.length && !rs.some(r => r.day === sun && r.kind === "weekend");
+  const miss = kmWeek(mondayOf(t)).days.filter(x => x.missing && x.day < t).length;
+  const work = dow >= 1 && dow <= 5;
+  if (weNeeded) return { todo: true, text: "weekend" };
+  if (work && (!todayE || (kmEmpty(todayE) && !kmAbsence(todayE)))) return { todo: true, text: "oggi" };
+  if (miss) return { todo: true, text: miss + " da fare" };
+  return { todo: false, text: "a posto" };
+}
+// come si apre «Work»: "side" = barra da destra, "bottom" = pannello dal basso e schermate a tutto schermo
+const WORK_STYLE = "bottom";
+function openKmHub() {
+  document.body.classList.toggle("wk-bottom", WORK_STYLE === "bottom");
+  S.kmMode = true;
+  const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
+  const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
+  const weE = rs.find(r => r.day === sun && r.kind === "weekend");
+  const wk = kmWeek(mondayOf(t)), miss = wk.days.filter(x => x.missing && x.day < t);
+  const work = dow >= 1 && dow <= 5, ed = canEdit();
+  const todayTxt = todayE && kmAbsence(todayE) ? kmAbsence(todayE) : todayE && !kmEmpty(todayE) ? `${fmtKm(todayE.day_km)} km segnati` : work ? "da segnare" : "giorno libero";
+  const weFirst = (dow === 0 || dow === 1) && !weE && rs.length;
+  const todayMissing = work && (!todayE || (kmEmpty(todayE) && !kmAbsence(todayE)));
+  // il pulsante grande solo quando c'è qualcosa da fare: weekend, oggi o il primo giorno mancante
+  const mainLbl = weFirst ? "Segna i km del weekend" : todayMissing ? "Segna i km di oggi" : miss.length ? `Completa ${dayLabel(miss[0].day)}` : "";
+  // menu «Work»: barra che esce dal lato destro, con la pagina sotto oscurata; le voci aprono le schermate di sempre
+  const item = (id, icon, title, sub, cls = "") => `<button class="wk-i ${cls}" id="${id}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span><b>${title}</b>${sub ? `<em>${sub}</em>` : ""}</span><i aria-hidden="true">›</i></button>`;
+  const reuse = document.querySelector(".drawer-bg");
+  const bg = reuse || document.createElement("div"); if (!reuse) { bg.className = "drawer-bg"; document.body.appendChild(bg); }
+  const sheet = document.createElement("aside"); sheet.className = "sheet drawer"; sheet.id = "sheet"; sheet.setAttribute("aria-label", "Work");
+  sheet.innerHTML = `<div class="wk-grab" aria-hidden="true"></div><div class="wk-head"><div><span>Auto aziendale e trasferte</span><h2>Work</h2></div><button class="wk-x" id="kh-x" aria-label="Chiudi">✕</button></div>
+    <div class="wk-sum">
+      <div><span>Oggi</span><b>${esc(todayTxt)}</b></div>
+      <div><span>Settimana</span><b class="num">${fmtKm(wk.km)} km</b></div>
+      <div><span>Da fare</span><b class="${miss.length ? "out" : ""}">${miss.length ? miss.length + (miss.length === 1 ? " giorno" : " giorni") : "nulla"}</b></div>
+    </div>
+    ${miss.length ? `<p class="hint" style="margin:-2px 2px 10px">Mancano: ${miss.map(x => dayLabel(x.day)).join(", ")}</p>` : ""}
+    <div class="wk-grp">Chilometri</div>
+    ${ed ? item("kh-today", ICON.car, "Km di oggi", esc(todayTxt), "hl") : ""}
+    ${ed ? item("kh-we", ICON.cal, "Km weekend", weE ? `${fmtKm(weE.private_km)} km privati` : "contachilometri della domenica") : ""}
+    ${item("kh-week", ICON.list, "Settimana", "giorni, km e rifornimenti")}
+    ${ed ? item("kh-crm", ICON.crm, "Carica dal CRM", "paesi e clienti del giro") : ""}
+    <div class="wk-grp">Spese e assenze</div>
+    ${ed ? item("kh-fuel", ICON.fuel, "Carburante", "carta aziendale") : ""}
+    ${ed ? item("kh-off", ICON.off, "Ferie, malattia", "o permesso") : ""}
+    ${item("kh-xls", ICON.xls, "Nota spese", "Excel o PDF da stampare")}`;
+  document.body.appendChild(sheet); document.body.style.overflow = "hidden";
+  if (reuse) sheet.classList.add("on", "sub");     // tornando da una schermata: niente nuova entrata
+  requestAnimationFrame(() => { bg.classList.add("on"); sheet.classList.add("on"); });
+  const shut = () => { sheet.remove(); bg.remove(); document.body.style.overflow = ""; };
+  const closeAll = () => { S.kmMode = false; bg.classList.remove("on"); sheet.classList.remove("on"); setTimeout(() => { shut(); render(); }, 260); };
+  const go = fn => () => { sheet.remove(); fn(); setTimeout(() => { if (!document.querySelector(".sheet")) { bg.remove(); document.body.style.overflow = ""; } }, 50); };
+  const back = null;   // il ritorno al menu lo fa «‹ Indietro» (S.kmMode)
+  $("#kh-x", sheet).onclick = closeAll; bg.onclick = closeAll;
+  // trascinando verso destra si chiude
+  let x0 = null, y0 = null;
+  sheet.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; y0 = sheet.scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
+  sheet.addEventListener("touchend", e => { const t = e.changedTouches[0];
+    if (WORK_STYLE === "bottom" ? y0 != null && t.clientY - y0 > 80 : x0 != null && t.clientX - x0 > 70) closeAll(); x0 = y0 = null; }, { passive: true });
+  if ($("#kh-today", sheet)) $("#kh-today", sheet).onclick = go(() => openKm("giorno"));
+  if ($("#kh-we", sheet)) $("#kh-we", sheet).onclick = go(() => openKm("weekend"));
+  $("#kh-week", sheet).onclick = go(() => openKmWeek(mondayOf(t)));
+  if ($("#kh-fuel", sheet)) $("#kh-fuel", sheet).onclick = go(() => openFuel(null, back));
+  if ($("#kh-crm", sheet)) $("#kh-crm", sheet).onclick = go(() => pickGiroCrm(back));
+  if ($("#kh-off", sheet)) $("#kh-off", sheet).onclick = go(() => openAbsence(t, null, back));
+  $("#kh-xls", sheet).onclick = go(() => openNotaSpese());
+}
+function homeKmCard() {
+  if (!kmMine() || (!rows("work_km").length && !canEdit())) return "";
+  const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
+  const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
+  const weNeeded = (dow === 0 || dow === 1) && !rs.some(r => r.day === sun && r.kind === "weekend") && rs.length;
+  const wk = kmWeek(mondayOf(t)), miss = wk.days.filter(x => x.missing && x.day < t).length;
+  const work = dow >= 1 && dow <= 5;
+  const main = weNeeded ? `<button class="btn ${dow === 0 ? "primary" : ""} sm" id="km-we">Km weekend</button>`
+    : work && todayE && kmAbsence(todayE) ? `<button class="btn sm" id="km-today">Oggi: ${kmAbsence(todayE).toLowerCase()} ✓</button>`
+    : work ? (todayE && !kmEmpty(todayE) ? `<button class="btn sm" id="km-today">Oggi ${fmtKm(todayE.day_km)} km ✓</button>` : `<button class="btn primary sm" id="km-today">Km di oggi</button>`)
+    : `<button class="btn sm" id="km-today">Segna km</button>`;
+  return `<div class="card km-w km-mini"><div class="km-head"><b>Km lavoro</b>
+      <button class="btn link sm" id="km-week">sett. ${fmtKm(wk.km)} km${miss ? ` · <span class="out">${miss} da fare</span>` : ""} ›</button></div>
+    <div class="km-btns">${main}${canEdit() ? `<button class="btn sm" id="km-fuel">+ Carburante</button><button class="btn sm" id="km-crm" aria-label="Carica paesi e clienti dal CRM">Carica dal CRM</button>` : ""}</div></div>`;
+}
+/* ==========================================================================
+   Pastiglie (solo per l'account di chi tiene i km; dati cifrati con la sua password)
+   ========================================================================== */
+const QTY_LABEL = { 0.25: "¼", 0.5: "½", 0.75: "¾", 1: "1", 1.5: "1½", 2: "2", 3: "3" };
+const qtyText = q => QTY_LABEL[q] || String(q).replace(".", ",");
+const doseText = (x, m) => `${qtyText(x.qty)} ${m && m.unit === "spruzzi" ? (x.qty === 1 ? "spruzzo" : "spruzzi") : x.qty > 1 ? "pastiglie" : "pastiglia"}${m && m.strength && m.unit !== "spruzzi" ? ` · ${fmtKm(x.qty * m.strength)} ${m.unit}` : ""}`;
+function homeMedsCard() {
+  if (!medsOwner() || !canEdit()) return "";
+  return `<div class="card km-mini meds-mini"><div class="km-head"><b>Pastiglie</b><button class="btn link sm" id="md-open">calendario e grafici ›</button></div>
+    <div class="muted" id="md-today" style="font-size:13px;margin-top:4px">Protette dalla tua password</div>
+    <div class="km-btns" style="grid-template-columns:1fr"><button class="btn primary sm" id="md-take">Ho preso una pastiglia</button></div></div>`;
+}
+async function bindHomeMeds() {
+  if (!$("#md-take")) return;
+  $("#md-take").onclick = () => medsGate(() => openDose());
+  $("#md-open").onclick = () => medsGate(() => openMeds("oggi"));
+  try { const st = await medsStatus(); if (!st.unlocked || !$("#md-today")) return;
+    const t = todayIso(), meds = await medsList(), xs = (await medsDoses(t.slice(0, 7))).filter(x => x.at.startsWith(t));
+    $("#md-today").textContent = xs.length ? "Oggi: " + xs.map(x => `${(meds.find(m => m.id === x.med_id) || {}).name || "?"} ${qtyText(x.qty)} alle ${x.at.slice(11)}`).join(", ") : "Oggi niente";
+  } catch (e) { }
+}
+/* prima di aprire: password da creare o da inserire (una volta per telefono) */
+async function medsGate(next) {
+  const st = await medsStatus();
+  if (st.unlocked) return next();
+  const { sheet } = openSheet(st.setup ? "Pastiglie" : "Proteggi le pastiglie", st.setup ? `
+      <p class="hint">Scrivi la password delle pastiglie. Su questo telefono te la chiedo una volta sola.</p>
+      <label class="f"><span>Password</span><input type="password" id="mp-1" autocomplete="current-password"></label>` : `
+      <p class="hint">Le pastiglie si salvano <b>cifrate</b>: online sono illeggibili, le vedi solo tu con questa password (sul Mac e sull'iPhone).
+        <b>Se la dimentichi non si possono recuperare</b>: scrivila in un posto sicuro (es. Portachiavi o Note bloccata).</p>
+      <label class="f"><span>Nuova password (almeno 8 caratteri)</span><input type="password" id="mp-1" autocomplete="new-password"></label>
+      <label class="f"><span>Ripetila</span><input type="password" id="mp-2" autocomplete="new-password"></label>`,
+    async () => {
+      const a = $("#mp-1", sheet).value;
+      if (st.setup) await medsUnlock(a);
+      else { if (a !== $("#mp-2", sheet).value) throw new Error("Le due password non sono uguali"); await medsSetup(a); }
+      setTimeout(next, 60); return st.setup ? "" : "Password creata";
+    }, { saveLabel: st.setup ? "Apri" : "Crea password" });
+  setTimeout(() => $("#mp-1", sheet).focus(), 250);
+}
+async function openDose(x, back) {
+  const meds = (await medsList()).filter(m => m.active !== false || (x && m.id === x.med_id));
+  if (!meds.length) return openMed(null, () => openDose(x, back));
+  const now = new Date(), at = x ? x.at : `${todayIso()}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  let med = x && meds.some(m => m.id === x.med_id) ? x.med_id : meds[0].id, qty = x ? x.qty : 1;
+  const ex = x && x.id ? x : null;   // assunzione già salvata (si modifica) o nuova
+  const { sheet } = openSheet(ex ? "Modifica" : "Ho preso", `
+    <label class="f"><span>Cosa</span></label><div class="chips" id="dz-m">${meds.map(m => `<button type="button" data-m="${m.id}" class="${m.id === med ? "on" : ""}"><span class="dot" style="background:${m.color}"></span>${esc(m.name)}${m.strength ? ` ${fmtKm(m.strength)} ${m.unit}` : ""}</button>`).join("")}</div>
+    <label class="f"><span>Quanto</span></label><div class="seg" id="dz-q">${[0.25, 0.5, 0.75, 1, 2].map(q => `<button type="button" data-q="${q}" class="${q === qty ? "on" : ""}">${qtyText(q)}</button>`).join("")}</div>
+    <p class="hint" id="dz-h" style="margin-top:6px"></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="f"><span>Giorno</span><input type="date" id="dz-d" value="${at.slice(0, 10)}"></label>
+      <label class="f"><span>Ora</span><input type="time" id="dz-t" value="${at.slice(11)}"></label></div>
+    <label class="f"><span>Nota (facoltativa)</span><input type="text" id="dz-n" value="${esc(x ? x.note || "" : "")}" placeholder="es. dopo cena, mal di testa"></label>
+    <button class="btn link" id="dz-new">+ Nuovo farmaco</button>`,
+    async () => { await medsSaveDose({ id: ex && ex.id, old_at: ex && ex.at, med_id: med, qty, at: `${$("#dz-d", sheet).value}T${$("#dz-t", sheet).value}`, note: $("#dz-n", sheet).value });
+      if (back) setTimeout(back, 60); return "Segnata"; },
+    ex ? { saveLabel: "Salva", del: { label: "Elimina", confirm: "Eliminare questa assunzione?", run: async () => { await medsDeleteDose(ex.id, ex.at); if (back) setTimeout(back, 60); return "Eliminata"; } } } : { saveLabel: "Segna" });
+  const hint = () => { const m = meds.find(z => z.id === med); $("#dz-h", sheet).textContent = doseText({ qty }, m); };
+  $$("#dz-m [data-m]", sheet).forEach(b => b.onclick = () => { med = b.dataset.m; $$("#dz-m button", sheet).forEach(z => z.classList.toggle("on", z === b)); hint(); });
+  $$("#dz-q [data-q]", sheet).forEach(b => b.onclick = () => { qty = +b.dataset.q; $$("#dz-q button", sheet).forEach(z => z.classList.toggle("on", z === b)); hint(); });
+  $("#dz-new", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = ""; openMed(null, () => openDose(x, back)); };
+  hint();
+}
+async function openMed(m, back) {
+  const { sheet } = openSheet(m ? "Farmaco" : "Nuovo farmaco", `
+    <label class="f"><span>Nome</span><input type="text" id="mf-n" value="${esc(m ? m.name : "")}" placeholder="es. Aerius"></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="f"><span>Dosaggio di una pastiglia</span><input type="text" inputmode="decimal" id="mf-s" value="${m && m.strength != null ? String(m.strength).replace(".", ",") : ""}" placeholder="es. 5"></label>
+      <label class="f"><span>Unità</span><select id="mf-u">${MED_UNITS.map(u => `<option ${m ? (m.unit === u ? "selected" : "") : u === "mg" ? "selected" : ""}>${u}</option>`).join("")}</select></label></div>
+    <label class="f"><span>Note</span><input type="text" id="mf-x" value="${esc(m ? m.notes || "" : "")}" placeholder="es. al bisogno, 1 al giorno"></label>
+    ${m ? `<label class="chk"><input type="checkbox" id="mf-a" ${m.active !== false ? "checked" : ""}> Lo prendo ancora (se tolto non compare tra le scelte)</label>` : ""}`,
+    async () => { await medsSaveMed({ id: m && m.id, name: $("#mf-n", sheet).value, strength: $("#mf-s", sheet).value, unit: $("#mf-u", sheet).value, notes: $("#mf-x", sheet).value, active: $("#mf-a", sheet) ? $("#mf-a", sheet).checked : true });
+      if (back) setTimeout(back, 60); return "Salvato"; });
+  setTimeout(() => !m && $("#mf-n", sheet).focus(), 250);
+}
+async function openMeds(tab, opts = {}) {
+  S.medTab = tab || S.medTab || "oggi"; S.medMonth = opts.month || S.medMonth || todayIso().slice(0, 7); S.medPeriod = S.medPeriod || "mese";
+  const st = await medsStats(S.medMonth, S.medPeriod, S.medFilter || null), meds = st.meds;
+  const reopen = (t, o) => () => openMeds(t, o);
+  const tabs = `<div class="seg" id="md-tabs" style="margin-bottom:12px">${[["oggi", "Oggi"], ["lista", "Elenco"], ["cal", "Calendario"], ["graf", "Grafici"], ["farm", "Farmaci"]].map(([k, l]) => `<button data-t="${k}" class="${S.medTab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  let body = "";
+  const t = todayIso();
+  if (S.medTab === "oggi") {
+    const xs = (st.calendar[t] || []).sort((a, b) => a.at.localeCompare(b.at));
+    const recent = []; for (let i = 1; i <= 6; i++) { const d = addDays(t, -i); if (d.slice(0, 7) === S.medMonth || true) recent.push(d); }
+    body = `<div class="card"><h2>Oggi</h2>${xs.length ? xs.map(x => `<div class="row md-x" data-x="${x.id}" data-at="${x.at}"><span class="n"><span class="dot" style="background:${x.color}"></span> <b>${esc(x.name)}</b> <span class="muted">${doseText(x, x)}</span></span><span class="muted">${x.at.slice(11)} ›</span></div>`).join("") : `<p class="muted" style="margin:0">Ancora niente oggi.</p>`}</div>
+      <button class="btn primary wide" id="md-add">Ho preso una pastiglia</button>`;
+  } else if (S.medTab === "lista") {
+    // elenco delle pastiglie prese nel mese: data, ora, farmaco e dosaggio (le più recenti in alto)
+    const days = Object.keys(st.calendar).filter(d => d.startsWith(S.medMonth)).sort().reverse();
+    const all = days.flatMap(d => (st.calendar[d] || []).filter(x => !S.medFilter || x.med_id === S.medFilter));
+    body = `<div class="card"><div class="km-head"><button class="btn link" id="md-pm" aria-label="Mese precedente">‹</button><b>${monthName(S.medMonth)}</b><button class="btn link" id="md-nm" aria-label="Mese successivo">›</button></div>
+        <select id="md-lf" style="margin-top:8px"><option value="">Tutti i farmaci</option>${meds.map(m => `<option value="${m.id}" ${S.medFilter === m.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
+        <p class="muted" style="font-size:13px;margin:8px 0 0">${all.length} ${all.length === 1 ? "dose" : "dosi"} nel mese</p></div>
+      ${days.map(d => { const xs = (st.calendar[d] || []).filter(x => !S.medFilter || x.med_id === S.medFilter).sort((a, b) => b.at.localeCompare(a.at)); if (!xs.length) return "";
+        return `<div class="dhead"><b>${dayLabel(d).replace(/^./, c => c.toUpperCase())}</b><span>${xs.length} ${xs.length === 1 ? "dose" : "dosi"}</span></div>
+          <div class="card" style="padding:4px 14px">${xs.map(x => `<div class="row md-x" data-x="${x.id}" data-at="${x.at}"><span class="muted num" style="width:46px">${x.at.slice(11)}</span><span class="n"><span class="dot" style="background:${x.color}"></span> <b>${esc(x.name)}</b><br><span class="muted" style="font-size:13px">${doseText(x, x)}</span></span><span class="muted">›</span></div>`).join("")}</div>`; }).join("")
+        || `<p class="muted" style="text-align:center;margin-top:20px">Nessuna pastiglia segnata in ${monthName(S.medMonth)}.</p>`}`;
+  } else if (S.medTab === "cal") {
+    const first = S.medMonth + "-01", start = mondayOf(first), last = addDays(medAddMonths(S.medMonth, 1) + "-01", -1);
+    let cells = ""; for (let d = start; d <= last || new Date(d + "T12:00:00").getDay() !== 1; d = addDays(d, 1)) {
+      const xs = st.calendar[d] || [], inM = d.slice(0, 7) === S.medMonth;
+      const pl = st.pollen[d], lv = pl != null ? polLevel(pl) : null;
+      cells += `<button class="md-day ${inM ? "" : "out"} ${d === t ? "today" : ""} ${S.medDay === d ? "sel" : ""} ${lv && inM ? "pl-" + lv.replace(" ", "") : ""}" data-d="${d}" ${inM ? "" : "disabled"}><span>${+d.slice(8)}</span><i>${xs.slice(0, 4).map(x => `<b style="background:${x.color}"></b>`).join("")}</i></button>`; }
+    const sel = S.medDay && S.medDay.slice(0, 7) === S.medMonth ? S.medDay : null, xs = sel ? (st.calendar[sel] || []) : [];
+    body = `<div class="card"><div class="km-head"><button class="btn link" id="md-pm">‹</button><b>${monthName(S.medMonth)}</b><button class="btn link" id="md-nm">›</button></div>
+      <div class="md-cal">${["L", "M", "M", "G", "V", "S", "D"].map(x => `<span class="h">${x}</span>`).join("")}${cells}</div>
+      ${Object.keys(st.pollen).some(d => d.startsWith(S.medMonth)) ? `<p class="muted" style="font-size:12px;margin:8px 0 0">Bordo colorato = graminacee: <i class="md-lg pl-medio"></i> medie <i class="md-lg pl-alto"></i> alte <i class="md-lg pl-moltoalto"></i> molto alte</p>` : `<p class="muted" style="font-size:12px;margin:8px 0 0">Graminacee: i livelli compaiono nella stagione dei pollini.</p>`}</div>
+      ${sel ? `<div class="card"><h2>${dayLabel(sel)}</h2>${xs.length ? xs.map(x => `<div class="row md-x" data-x="${x.id}" data-at="${x.at}"><span class="n"><span class="dot" style="background:${x.color}"></span> <b>${esc(x.name)}</b> <span class="muted">${doseText(x, x)}</span></span><span class="muted">${x.at.slice(11)} ›</span></div>`).join("") : `<p class="muted" style="margin:0">Niente in questo giorno.</p>`}
+        <button class="btn link" id="md-addday" style="margin-top:6px">+ Aggiungi in questo giorno</button></div>` : `<p class="hint">Tocca un giorno per vedere cosa hai preso.</p>`}`;
+  } else if (S.medTab === "graf") {
+    const mx = Math.max(1, ...st.series.map(x => Math.max(x.now, x.prev)));
+    body = `<div class="seg" id="md-per" style="margin-bottom:10px">${[["settimana", "Settimana"], ["mese", "Mese"], ["anno", "Anno"]].map(([k, l]) => `<button data-p="${k}" class="${S.medPeriod === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <select id="md-f" style="margin-bottom:10px"><option value="">Tutti i farmaci (numero di dosi)</option>${meds.map(m => `<option value="${m.id}" ${S.medFilter === m.id ? "selected" : ""}>${esc(m.name)}${m.strength ? ` (in ${m.unit})` : ""}</option>`).join("")}</select>
+      ${S.medPeriod !== "settimana" ? `<div class="km-head" style="margin-bottom:6px"><button class="btn link" id="md-pm">‹</button><b>${S.medPeriod === "anno" ? S.medMonth.slice(0, 4) : monthName(S.medMonth)}</b><button class="btn link" id="md-nm">›</button></div>` : ""}
+      <div class="card"><div class="pw-stats"><div><span>${esc(st.names[0])}</span><b class="num">${fmtKm(st.total)}</b><span class="muted" style="font-size:12px">${esc(st.measure)}</span></div>
+        <div><span>${esc(st.names[1])}</span><b class="num">${fmtKm(st.prev_total)}</b><span class="muted" style="font-size:12px">${esc(st.measure)}</span></div>
+        <div><span>differenza</span><b class="num ${st.diff_pct > 0 ? "out" : st.diff_pct < 0 ? "in" : ""}">${st.diff_pct == null ? "—" : (st.diff_pct > 0 ? "+" : "") + st.diff_pct + "%"}</b><span class="muted" style="font-size:12px">${st.days} giorni</span></div></div>
+        <div class="md-chart">${st.series.map(x => `<div class="c"><div class="b"><i class="p" style="height:${x.prev / mx * 100}%"></i><i class="n" style="height:${x.now / mx * 100}%"></i></div><em class="pst ${x.pollen_level ? "pl-" + x.pollen_level.replace(" ", "") : ""}"></em><span>${x.label}</span></div>`).join("")}</div>
+        <p class="muted" style="font-size:12px;margin:6px 0 0"><i class="md-lg n"></i> ${esc(st.names[0])} &nbsp; <i class="md-lg p"></i> ${esc(st.names[1])} · striscia: graminacee</p></div>
+      ${st.per_med.length ? `<div class="card"><h2>Per farmaco</h2>${st.per_med.map(m => `<div class="row"><span class="n"><span class="dot" style="background:${m.color}"></span> ${esc(m.name)}<br><span class="muted" style="font-size:12px">${m.days} giorni${m.strength ? ` · ${fmtKm(m.pills * m.strength)} ${m.unit}` : ""}</span></span>
+        <span class="num"><b>${qtyText(m.pills)}</b> <span class="muted" style="font-size:12px">prima ${qtyText(m.prev_pills)}</span></span></div>`).join("")}</div>` : ""}`;
+  } else {
+    body = `<div class="card">${meds.length ? meds.map(m => `<div class="row md-m" data-m="${m.id}"><span class="n"><span class="dot" style="background:${m.color}"></span> <b>${esc(m.name)}</b> ${m.strength ? `<span class="muted">${fmtKm(m.strength)} ${m.unit}</span>` : ""}${m.active === false ? ' <span class="muted">· non più</span>' : ""}<br><span class="muted" style="font-size:12px">${esc(m.notes || "")}</span></span><span class="muted">›</span></div>`).join("") : `<p class="muted" style="margin:0">Nessun farmaco.</p>`}</div>
+      <button class="btn wide" id="md-newmed">+ Nuovo farmaco</button>
+      <button class="btn link wide" id="md-lock" style="margin-top:10px">Chiudi a chiave su questo telefono</button>`;
+  }
+  const { sheet } = openSheet("Pastiglie", tabs + body);
+  const go = (fn) => () => { sheet.remove(); document.body.style.overflow = ""; fn(); };
+  $$("#md-tabs [data-t]", sheet).forEach(b => b.onclick = go(() => openMeds(b.dataset.t)));
+  $$(".md-x", sheet).forEach(el => el.onclick = go(async () => { const ym = el.dataset.at.slice(0, 7); const x = (await medsDoses(ym)).find(z => z.id === el.dataset.x); if (x) openDose(x, reopen(S.medTab)); }));
+  if ($("#md-add", sheet)) $("#md-add", sheet).onclick = go(() => openDose(null, reopen("oggi")));
+  if ($("#md-addday", sheet)) $("#md-addday", sheet).onclick = go(() => openDose({ at: S.medDay + "T08:00", qty: 1, med_id: (meds.find(m => m.active !== false) || {}).id, isNew: true }, reopen("cal")));
+  $$(".md-day[data-d]", sheet).forEach(b => b.onclick = go(() => { S.medDay = b.dataset.d; openMeds("cal"); }));
+  const step = S.medPeriod === "anno" && S.medTab === "graf" ? 12 : 1;
+  if ($("#md-pm", sheet)) $("#md-pm", sheet).onclick = go(() => openMeds(S.medTab, { month: medAddMonths(S.medMonth, -step) }));
+  if ($("#md-nm", sheet)) $("#md-nm", sheet).onclick = go(() => openMeds(S.medTab, { month: medAddMonths(S.medMonth, step) }));
+  $$("#md-per [data-p]", sheet).forEach(b => b.onclick = go(() => { S.medPeriod = b.dataset.p; openMeds("graf"); }));
+  if ($("#md-lf", sheet)) $("#md-lf", sheet).onchange = go(() => { S.medFilter = $("#md-lf", sheet).value || null; openMeds("lista"); });
+  if ($("#md-f", sheet)) $("#md-f", sheet).onchange = go(() => { S.medFilter = $("#md-f", sheet).value || null; openMeds("graf"); });
+  $$(".md-m", sheet).forEach(el => el.onclick = go(() => openMed(meds.find(m => m.id === el.dataset.m), reopen("farm"))));
+  if ($("#md-newmed", sheet)) $("#md-newmed", sheet).onclick = go(() => openMed(null, reopen("farm")));
+  if ($("#md-lock", sheet)) $("#md-lock", sheet).onclick = go(async () => { await medsLock(); toast("Pastiglie chiuse: alla prossima apertura ti chiedo la password"); render(); });
+}
+
+function bindHomeKm() {
+  if ($("#km-today")) $("#km-today").onclick = () => openKm("giorno");
+  if ($("#km-we")) $("#km-we").onclick = () => openKm("weekend");
+  if ($("#km-week")) $("#km-week").onclick = () => openKmWeek(mondayOf(todayIso()));
+  if ($("#km-fuel")) $("#km-fuel").onclick = () => openFuel();
+  if ($("#km-crm")) $("#km-crm").onclick = () => pickGiroCrm();
+}
+/* ---------- giro visite dal CRM (PDF «Paesi e clienti …» arrivato per mail o salvato in File) ---------- */
+function pickGiroCrm(back) {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "application/pdf,.pdf"; inp.style.display = "none";
+  document.body.appendChild(inp);
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; inp.remove();
+    if (!f) return;
+    try { openGiroCrm(await leggiGiroCrm(f), back); }
+    catch (e) { alert(e.message); }
+  };
+  inp.click();
+}
+function openGiroCrm(giro, back) {
+  const have = {}; kmRows().forEach(r => { if (r.kind === "giorno") have[r.day] = r; });
+  const list = (label, arr) => `<div style="font-size:14px;margin:2px 0"><span class="muted">${label}</span> ${arr.length ? esc(arr.join(", ")) : "—"}</div>`;
+  const { sheet } = openSheet("Giro dal CRM", `
+    <p class="hint">Dal ${dayLabel(giro.from)} al ${dayLabel(giro.to)}: per ogni giorno scrivo <b>A</b> (paesi) e <b>Clienti</b>. Da, auto e km non cambiano: i km li scrivi tu la sera.</p>
+    ${giro.days.map(d => { const e = have[d.day], busy = e && (e.a || e.clients);
+      return `<div class="card" style="padding:12px 14px"><b>${dayLabel(d.day)}</b>
+        ${list("A:", d.towns)}${list("Clienti:", d.clients)}
+        ${busy ? `<div class="notice" style="font-size:13px;margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--bg2, #f3f1ec)">Già nell'app: <b>A</b> ${esc(e.a || "—")} · <b>Clienti</b> ${esc(e.clients || "—")}${kmEmpty(e) ? "" : ` · ${fmtKm(e.day_km)} km`}</div>
+          <div class="seg" style="margin-top:8px" data-day="${d.day}"><button type="button" data-r="1">Sostituisci</button><button type="button" class="on" data-r="0">Lascia com'è</button></div>`
+        : `<div class="muted" style="font-size:13px;margin-top:6px">${e ? "Giorno già inserito senza paesi e clienti: li aggiungo" : "Giorno nuovo: lo creo senza km"}</div>`}</div>`; }).join("")}`,
+    async () => {
+      const replace = new Set($$(".seg[data-day]", sheet).filter(x => $(".on", x).dataset.r === "1").map(x => x.dataset.day));
+      const r = await saveGiroCrm(giro, replace);
+      setTimeout(() => openKmWeek(mondayOf(giro.from)), 50);   // si vede subito la settimana del giro
+      return `Giro caricato: ${r.saved} ${r.saved === 1 ? "giorno" : "giorni"}${r.kept ? `, ${r.kept} lasciati com'erano` : ""}`;
+    }, { saveLabel: `Carica ${giro.days.length} ${giro.days.length === 1 ? "giorno" : "giorni"}` });
+  $$(".seg[data-day] button", sheet).forEach(b => b.onclick = () => { $$("button", b.parentNode).forEach(x => x.classList.toggle("on", x === b)); });
+}
+function tagField(id, label, values, suggestions, placeholder) {
+  return `<label class="f"><span>${label}</span></label><div class="tags" id="${id}">${values.map(v => `<button type="button" class="tag" data-v="${esc(v)}">${esc(v)} ✕</button>`).join("")}
+    <input type="text" list="${id}-l" placeholder="${placeholder}" autocomplete="off" enterkeyhint="next"></div>
+    <datalist id="${id}-l">${suggestions.map(v => `<option value="${esc(v)}">`).join("")}</datalist>`;
+}
+function bindTags(root, id) {
+  const box = $("#" + id, root), inp = $("input", box);
+  const add = () => { kmSplit(inp.value).forEach(v => { if (![...$$(".tag", box)].some(t => t.dataset.v.toLowerCase() === v.toLowerCase()))
+      inp.insertAdjacentHTML("beforebegin", `<button type="button" class="tag" data-v="${esc(v)}">${esc(v)} ✕</button>`); }); inp.value = ""; bind(); };
+  const bind = () => $$(".tag", box).forEach(t => t.onclick = () => { t.remove(); });
+  inp.onkeydown = e => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } };
+  inp.onchange = add; bind();
+  return () => { add(); return $$(".tag", box).map(t => t.dataset.v); };
+}
+function openKm(kind, day, entry) {
+  kind = kind || "giorno";
+  const s = kmSettings(), rs = kmRows();
+  day = day || (kind === "weekend" ? lastSunday() : todayIso());
+  const e = entry || rs.find(r => r.day === day && r.kind === kind) || null;
+  if (e && kmAbsence(e)) return openAbsence(day, e);
+  const prev = rs.filter(r => r.odometer != null && (r.day < day || (r.day === day && kind === "weekend" && r.kind === "giorno"))).pop();
+  const lastDay = rs.filter(r => r.kind === "giorno" && r.day < day).pop();
+  const sug = kmSuggestions(), cars = [...new Set((s.cars || []).map(c => c.name))];
+  const { sheet } = openSheet(kind === "weekend" ? "Km del weekend" : "Km di lavoro", `
+    <label class="f"><span>${kind === "weekend" ? "Domenica" : "Giorno"}</span><input type="date" id="km-d" value="${day}"></label>
+    <input class="amount num" id="km-o" inputmode="decimal" placeholder="contachilometri" value="${e && e.odometer != null ? esc(String(e.odometer).replace(".", ",")) : ""}" autocomplete="off" aria-label="Contachilometri">
+    <div class="amount-line" id="km-hint">${prev ? `ultima lettura ${fmtKm(prev.odometer)} · ${dayLabel(prev.day)}` : "km del contachilometri"}</div>
+    ${kind === "weekend" ? `<p class="hint">Scrivi il contachilometri di domenica sera (o di lunedì mattina, prima di partire). I km del fine settimana non entrano nei km di lavoro.</p>` : `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Da</span><input type="text" id="km-da" value="${esc(e ? e.da : s.da)}"></label>
+        <label class="f"><span>Auto</span><select id="km-car">${(cars.includes(carOn(s, day)) ? cars : cars.concat(carOn(s, day))).map(c => `<option ${c === (e ? e.car : carOn(s, day)) ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label></div>
+      <button class="btn link" id="km-off" style="margin:-4px 0 4px">Ferie, malattia o permesso?</button>
+      ${lastDay && !e ? `<button class="btn link" id="km-copy" style="margin:-4px 0 6px">Copia paesi e clienti di ${dayLabel(lastDay.day)}</button>` : ""}
+      <div id="km-tags">${tagField("km-a", "A (paesi visitati)", kmSplit(e && e.a), sug.places, "Scrivi un paese e premi Invio")}
+      ${tagField("km-c", "Clienti", kmSplit(e && e.clients), sug.clients, "Scrivi un cliente e premi Invio")}</div>
+      <details style="margin-top:6px"><summary>Non hai il contachilometri? Scrivi i km del giorno</summary>
+        <label class="f" style="margin-top:8px"><span>Km del giorno</span><input type="text" inputmode="decimal" id="km-k" value="${e && e.km != null ? esc(String(e.km).replace(".", ",")) : ""}"></label></details>`}`,
+    async () => {
+      const r = await saveKm({ kind, day: $("#km-d").value, odometer: $("#km-o").value, km: $("#km-k") ? $("#km-k").value : null,
+        da: $("#km-da") ? $("#km-da").value : null, car: $("#km-car") ? $("#km-car").value : null,
+        a: getA ? getA().join(", ") : null, clients: getC ? getC().join(", ") : null });
+      if (r.warning) alert(r.warning);
+      return "Km salvati";
+    },
+    e ? { del: { label: "Elimina", confirm: "Eliminare questa giornata?", run: () => { deleteKm(e.id); return "Eliminata"; } } } : {});
+  let getA = null, getC = null;
+  if (kind === "giorno") { getA = bindTags(sheet, "km-a"); getC = bindTags(sheet, "km-c"); }
+  const hint = () => { const v = parseAmount($("#km-o", sheet).value); if (prev && v && !isNaN(v)) $("#km-hint", sheet).textContent = `= ${fmtKm(round1(v - prev.odometer))} km ${kind === "weekend" ? "nel fine settimana" : "oggi"} · ultima lettura ${fmtKm(prev.odometer)}`; };
+  $("#km-o", sheet).oninput = hint; hint();
+  if ($("#km-copy", sheet)) $("#km-copy", sheet).onclick = () => {
+    $("#km-tags", sheet).innerHTML = tagField("km-a", "A (paesi visitati)", kmSplit(lastDay.a), sug.places, "Scrivi un paese e premi Invio") + tagField("km-c", "Clienti", kmSplit(lastDay.clients), sug.clients, "Scrivi un cliente e premi Invio");
+    getA = bindTags(sheet, "km-a"); getC = bindTags(sheet, "km-c"); $("#km-copy", sheet).remove();
+  };
+  if ($("#km-off", sheet)) $("#km-off", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = ""; openAbsence($("#km-d", sheet).value); };
+  $("#km-d", sheet).onchange = () => { sheet.remove(); document.body.style.overflow = ""; openKm(kind, $("#km-d", sheet).value); };
+  if (!e || kmEmpty(e)) setTimeout(() => $("#km-o", sheet).focus(), 250);
+}
+function openAbsence(day, e, back) {
+  day = day || todayIso();
+  const type = e ? kmAbsence(e) : "Ferie";
+  const { sheet } = openSheet(e ? type : "Ferie o assenza", `
+    <div class="seg" id="ab-t" style="margin-bottom:12px">${KM_ABSENCES.map(t => `<button type="button" data-t="${t}" class="${t === type ? "on" : ""}">${t}</button>`).join("")}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <label class="f"><span>Dal</span><input type="date" id="ab-f" value="${day}"></label>
+      <label class="f"><span>Al</span><input type="date" id="ab-to" value="${day}"></label></div>
+    <label class="f"><span>Contachilometri al rientro (facoltativo)</span><input type="text" inputmode="decimal" id="ab-o" placeholder="prima di ripartire" value="${e && e.odometer != null ? esc(String(e.odometer).replace(".", ",")) : ""}"></label>
+    <p class="hint">Nella nota spese, al posto di paesi e clienti, c'è scritto <b id="ab-w">${type.toUpperCase()}</b>; niente km di lavoro. Sabato e domenica si saltano.
+      Se scrivi il contachilometri quando riprendi a lavorare, i km fatti con l'auto in quei giorni non finiscono nei km di lavoro.</p>`,
+    async () => {
+      const r = await saveAbsence({ type: $("#ab-t .on", sheet).dataset.t, from: $("#ab-f", sheet).value, to: $("#ab-to", sheet).value, odometer: $("#ab-o", sheet).value });
+      const wk = mondayOf($("#ab-f", sheet).value); setTimeout(() => openKmWeek(wk), 50);
+      return `${$("#ab-t .on", sheet).dataset.t}: ${r.saved} ${r.saved === 1 ? "giorno" : "giorni"}${r.skipped.length ? ` (saltati ${r.skipped.map(shortDate).join(", ")}: hanno già i km)` : ""}`;
+    },
+    e ? { del: { label: "Non ero assente: togli", confirm: "Togliere l'assenza di questo giorno?", run: () => { deleteKm(e.id); return "Tolta"; } } } : {});
+  $$("#ab-t button", sheet).forEach(b => b.onclick = () => { $$("#ab-t button", sheet).forEach(x => x.classList.toggle("on", x === b)); $("#ab-w", sheet).textContent = b.dataset.t.toUpperCase(); });
+  $("#ab-f", sheet).onchange = () => { if ($("#ab-to", sheet).value < $("#ab-f", sheet).value) $("#ab-to", sheet).value = $("#ab-f", sheet).value; };
+}
+function openFuel(f, back) {
+  const { sheet } = openSheet(f ? "Rifornimento" : "Carburante carta aziendale", `
+    <input class="amount num" id="fu-a" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Importo" value="${f ? Number(f.amount).toFixed(2).replace(".", ",") : ""}">
+    <div class="amount-line">pagato con la carta carburante dell'azienda</div>
+    <div class="grid2"><label class="f"><span>Giorno</span><input type="date" id="fu-d" value="${f ? f.day : todayIso()}"></label>
+      <label class="f"><span>Ora <em class="opt">facoltativa</em></span><input type="time" id="fu-t" value="${f && f.time ? f.time : ""}"></label></div>
+    <label class="f"><span>Km del contachilometri <em class="opt">facoltativo</em></span><input type="text" inputmode="numeric" id="fu-k" placeholder="es. 48.250" autocomplete="off" value="${f && f.odo ? fmtKm(f.odo) : ""}"></label>
+    <label class="f"><span>Distributore e luogo <em class="opt">facoltativo</em></span><input type="text" id="fu-p" maxlength="80" placeholder="es. Eni, via Roma – Cittadella" autocomplete="off" value="${f && f.place ? esc(f.place) : ""}"></label>
+    <div class="fu-decl" id="fu-decl"></div>
+    <p class="hint">Va nella riga «Carburante card aziendale» della nota spese, nel giorno indicato. Non è una spesa vostra e non tocca i conti.</p>`,
+    () => { saveFuel(fuelForm(f)); if (back) setTimeout(back, 50); return "Rifornimento salvato"; },
+    f ? { del: { label: "Elimina", confirm: "Eliminare questo rifornimento?", run: () => { deleteFuel(f.id); if (back) setTimeout(back, 50); return "Eliminato"; } } } : {});
+  // con importo, ora, km e distributore compare la dichiarazione per il controllo costi (al posto della ricevuta mancante)
+  const fuelForm = f => ({ id: f && f.id, amount: $("#fu-a", sheet).value, day: $("#fu-d", sheet).value, time: $("#fu-t", sheet).value, odo: $("#fu-k", sheet).value, place: $("#fu-p", sheet).value });
+  const decl = () => { const d = fuelForm(f), a = parseAmount(d.amount), ok = a > 0 && d.time && d.odo.trim() && d.place.trim();
+    $("#fu-decl", sheet).innerHTML = ok ? `<div class="fu-ok"><b>Dati completi.</b> Se il distributore non ti ha dato la ricevuta, crea la dichiarazione da consegnare al controllo costi.</div>
+      <button type="button" class="btn wide" id="fu-pdf">📄 Dichiarazione di rifornimento (PDF)</button>`
+      : `<p class="hint" style="margin-top:0">Con ora, km e distributore puoi creare una dichiarazione da consegnare al controllo costi quando manca la ricevuta.</p>`;
+    if ($("#fu-pdf", sheet)) $("#fu-pdf", sheet).onclick = () => {
+      let id; try { id = saveFuel(fuelForm(f)); } catch (e) { return toast(e.message); }
+      f = fuelList().find(x => x.id === id);
+      try { sharePdf(buildFuelPdf(f)); toast("Rifornimento salvato"); } catch (e) { toast(e.message); } };
+  };
+  ["#fu-a", "#fu-t", "#fu-k", "#fu-p"].forEach(q => $(q, sheet).addEventListener("input", decl)); decl();
+  if (!f) setTimeout(() => $("#fu-a", sheet).focus(), 250);
+}
+/* ---------- dati di fatturazione dell'azienda: a tutto schermo da mostrare alla cassa ----------
+   Stanno nel database della famiglia (app_settings «work_billing»), non su GitHub; solo per chi tiene i km. */
+const BILL_FIELDS = [["name", "Ragione sociale"], ["address", "Via e numero civico"], ["zip", "CAP"], ["city", "Comune"], ["prov", "Provincia"], ["vat", "Partita IVA"], ["cf", "Codice fiscale"],
+  ["sdi", "Codice destinatario (SDI)"], ["pec", "PEC"], ["phone", "Telefono"], ["note", "Note per la fattura"]];
+function openBilling() {
+  const b = billingGet(); if (!b) return openBillingEdit();
+  const digits = x => String(x || "").replace(/\D/g, "");
+  const same = b.vat && b.cf && digits(b.vat) === digits(b.cf);    // P.IVA e C.F. uguali: un riquadro solo
+  const tile = (k, label, cls = "") => b[k] ? `<button class="bc-t ${cls}" data-k="${k}"><span>${label}</span><b>${esc(b[k])}</b><i>Copia</i></button>` : "";
+  document.body.insertAdjacentHTML("beforeend", `<div id="bill" class="bill" role="dialog" aria-label="Dati per la fattura">
+    <div class="bill-top"><button id="bill-x">Chiudi</button><button id="bill-ed">Modifica</button></div>
+    <div class="bill-card">
+      ${b.qr ? `<div class="bc-qr"><img src="${b.qr}" alt="QR code per la fattura"><span>Inquadra il codice per i dati di fatturazione</span></div>` : ""}
+      <div class="bc-head"><span class="bc-pill">Fattura intestata a</span>
+        <button class="bc-name" data-k="name">${esc(b.name)}</button>
+        ${b.address || b.city ? `<button class="bc-addr" data-k="fulladdr">${esc(b.address || "").replace(/\n/g, "<br>")}${b.city ? `${b.address ? "<br>" : ""}${esc([b.zip, b.city].filter(Boolean).join(" "))}${b.prov ? ` (${esc(b.prov)})` : ""}` : ""}</button>` : ""}
+        ${b.phone ? `<button class="bc-tel" data-k="phone">Tel. ${esc(b.phone)}</button>` : ""}</div>
+      <div class="bc-grid">${same ? tile("vat", "P.IVA e C.F.") + tile("sdi", "Codice SDI", "sdi") : tile("vat", "Partita IVA") + tile("cf", "Codice fiscale") + tile("sdi", "Codice SDI", "sdi wide")}${tile("pec", "PEC", "wide pec")}${tile("note", "Note", "wide")}</div>
+    </div>
+    <p class="bill-hint">Tocca un dato per copiarlo · lo schermo resta acceso</p></div>`);
+  document.body.style.overflow = "hidden";
+  // il nome dell'azienda su una riga sola: il carattere si rimpicciolisce finché ci sta
+  const nm = $("#bill .bc-name"); for (let z = 29; z > 14 && nm.scrollWidth > nm.clientWidth; z--) nm.style.fontSize = z - 1 + "px";
+  let lock = null;
+  if (navigator.wakeLock) navigator.wakeLock.request("screen").then(l => lock = l).catch(() => { });
+  const close = () => { const e = $("#bill"); if (e) e.remove(); document.body.style.overflow = ""; if (lock) lock.release().catch(() => { }); };
+  $("#bill-x").onclick = close;
+  $("#bill-ed").onclick = () => { close(); openBillingEdit(openBilling); };
+  $$("#bill [data-k]").forEach(el => el.onclick = async () => {
+    const full = [b.address, [b.zip, b.city].filter(Boolean).join(" ") + (b.prov ? ` (${b.prov})` : "")].filter(x => x && x.trim()).join(", ");
+    try { await navigator.clipboard.writeText(el.dataset.k === "fulladdr" ? full : b[el.dataset.k]); el.classList.add("ok"); setTimeout(() => el.classList.remove("ok"), 900); toast("Copiato"); } catch (e) { toast("Non riesco a copiare"); } });
+}
+function openBillingEdit(back) {
+  const b = billingGet() || {};
+  openSheet("Dati per la fattura", `
+    <p class="hint" style="margin-top:0">I dati che l'azienda vuole sulle fatture di ristoranti e alberghi. Li scrivi una volta: poi da Km › «Dati per la fattura» li mostri a tutto schermo alla cassa.</p>
+    ${(() => { const inp = (k, l, attrs = "") => `<label class="f"><span>${l}${k === "note" || k === "pec" || k === "phone" ? ' <em class="opt">facoltativo</em>' : ""}</span>${k === "note"
+        ? `<textarea id="bi-${k}" rows="2" maxlength="200">${esc(b[k] || "")}</textarea>` : `<input type="text" id="bi-${k}" maxlength="120" autocomplete="off" autocapitalize="${k === "pec" ? "off" : "characters"}" value="${esc(b[k] || "")}" ${attrs}>`}</label>`;
+      return inp("name", "Ragione sociale") + inp("address", "Via e numero civico", 'placeholder="es. Via Roma, 10"')
+        + `<div class="bi-loc">${inp("zip", "CAP", 'inputmode="numeric" maxlength="5" placeholder="31030"')}${inp("city", "Comune")}${inp("prov", "Prov.", 'maxlength="2" placeholder="TV"')}</div>`
+        + inp("phone", "Telefono", 'inputmode="tel" placeholder="es. 0423 123456"')
+        + ["vat", "cf", "sdi", "pec"].map(k => inp(k, BILL_FIELDS.find(x => x[0] === k)[1])).join("") + inp("note", "Note per la fattura"); })()}
+    <div class="f"><span>QR code per la fattura <em class="opt">facoltativo</em></span>
+      <div class="bi-qr"><img id="bi-qrimg" alt="" ${b.qr ? `src="${b.qr}"` : "hidden"}><label class="btn">${b.qr ? "Cambia immagine" : "Scegli l'immagine del QR"}<input type="file" id="bi-qr" accept="image/*" hidden></label>
+        ${b.qr ? `<button type="button" class="btn link" id="bi-qrno">Togli</button>` : ""}</div></div>`,
+    () => { const d = { qr }; BILL_FIELDS.forEach(([k]) => d[k] = $("#bi-" + k).value); billingSave(d); if (back) setTimeout(back, 50); return "Dati salvati"; });
+  let qr = b.qr || null;
+  // l'immagine del QR rimpicciolita (max 640 px) e salvata come PNG nei dati della famiglia
+  $("#bi-qr").onchange = e => { const file = e.target.files[0]; if (!file) return;
+    const img = new Image(); img.onload = () => { const k = Math.min(1, 640 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); const x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+      x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height); qr = c.toDataURL("image/png");
+      $("#bi-qrimg").src = qr; $("#bi-qrimg").hidden = false; URL.revokeObjectURL(img.src); };
+    img.src = URL.createObjectURL(file); };
+  if ($("#bi-qrno")) $("#bi-qrno").onclick = () => { qr = null; $("#bi-qrimg").hidden = true; };
+}
+function sharePdf(pdf) {
+  const f = new File([pdf.blob], pdf.fileName, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [f] }))
+    return navigator.share({ files: [f], title: pdf.fileName }).catch(err => { if (err.name !== "AbortError") toast("Non riesco ad aprire la condivisione: " + err.message); });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(pdf.blob); a.download = pdf.fileName; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+function openNotaSpese(month) {
+  const cur = todayIso().slice(0, 7), months = [0, 1, 2].map(i => shiftMonth(cur, -i));
+  if (!months.includes(month)) month = cur;
+  const canShareFiles = !!(navigator.canShare && window.File && navigator.canShare({ files: [new File([""], "x.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })] }));
+  const info = m => { const d = notaSpeseData(m), fuel = fuelList().filter(f => f.day.slice(0, 7) === m).reduce((a, f) => a + f.amount, 0);
+    return `<div class="pw-stats"><div><span>Settimane</span><b class="num">${d.sheets.map(x => x[0]).join(", ") || "—"}</b></div>
+      <div><span>Km di lavoro</span><b class="num">${fmtKm(d.totalKm)}</b></div><div><span>Carburante carta</span><b class="num">${eur(fuel)}</b></div></div>
+      ${d.missing.length ? `<p class="out" style="font-size:13px;margin:10px 0 0">Mancano i km di ${d.missing.length} ${d.missing.length === 1 ? "giorno" : "giorni"}: ${d.missing.map(x => shortDate(x)).join(", ")}</p>` : ""}`; };
+  const { sheet } = openSheet("Nota spese", `
+    <label class="f"><span>Mese</span><select id="ns-m">${months.map(m => `<option value="${m}" ${m === month ? "selected" : ""}>${monthName(m).replace(/^./, c => c.toUpperCase())}</option>`).join("")}</select></label>
+    <div class="card" id="ns-info">${info(month)}</div>
+    <p class="hint">Lo stesso file che crea il Mac: un foglio per settimana con km, paesi, clienti, spese del Fondo lavoro e carburante della carta aziendale.
+      ${canShareFiles ? "Tocca «Invia per email», scegli <b>Mail</b> e scrivi il tuo indirizzo aziendale: il file è già allegato." : ""}</p>
+    ${!nsTemplate() ? `<p class="err">Manca il modello: apri il programma sul Mac e vai in «Km e nota spese», poi riprova qui dopo la sincronizzazione.</p>` : ""}
+    <button class="btn primary wide" id="ns-send">${canShareFiles ? "Invia per email" : "Scarica il file"}</button>
+    ${canShareFiles ? `<button class="btn wide" id="ns-dl" style="margin-top:8px">Salva in File</button>` : ""}
+    <div class="ns-pdf"><b>Da stampare</b><span>Prima controlli ogni spesa con il suo scontrino, poi il PDF identico al modello dell'azienda: un foglio per settimana.</span>
+      <button class="btn wide" id="ns-pdf">Stampa o PDF</button></div>`);
+  // il file si prepara subito: Safari apre la condivisione solo se parte direttamente dal tocco, senza attese
+  let ready = null, gen = 0;
+  const prepare = () => { const my = ++gen, m = $("#ns-m", sheet).value; ready = null; $("#se", sheet).textContent = "";
+    $$("#ns-send, #ns-dl", sheet).forEach(b => { b.disabled = true; b.dataset.l = b.dataset.l || b.textContent; b.textContent = "Preparo il file…"; });
+    buildNotaSpese(m).then(r => { if (my === gen) ready = r; }).catch(e => { if (my === gen) $("#se", sheet).textContent = e.message; })
+      .finally(() => { if (my === gen) $$("#ns-send, #ns-dl", sheet).forEach(b => { b.disabled = !ready; b.textContent = b.dataset.l; }); }); };
+  $("#ns-m", sheet).onchange = () => { $("#ns-info", sheet).innerHTML = info($("#ns-m", sheet).value); prepare(); };
+  const download = r => { const a = document.createElement("a"); a.href = URL.createObjectURL(r.blob); a.download = r.fileName;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); };
+  $("#ns-send", sheet).onclick = () => { const r = ready; if (!r) return;
+    if (!canShareFiles) return download(r);
+    const f = new File([r.blob], r.fileName, { type: r.blob.type });
+    navigator.share({ files: [f], title: r.fileName, text: `Nota spese ${monthName($("#ns-m", sheet).value)} – ${r.name}` })
+      .catch(err => { if (err.name !== "AbortError") $("#se", sheet).textContent = "Non riesco ad aprire la condivisione: " + err.message; }); };
+  if ($("#ns-dl", sheet)) $("#ns-dl", sheet).onclick = () => ready && download(ready);
+  $("#ns-pdf", sheet).onclick = () => { const m = $("#ns-m", sheet).value; sheet.remove(); document.body.style.overflow = ""; openNsReview(m); };
+  if (nsTemplate()) prepare(); else $$("#ns-send, #ns-dl", sheet).forEach(b => b.disabled = true);
+}
+/* revisione prima del PDF: una spesa alla volta, con lo scontrino in mano */
+const nsChecks = () => { try { const c = JSON.parse(localStorage.getItem("finanze-ns-check") || "{}"); for (const k in c) if (c[k] === 1) c[k] = "ok"; return c; } catch (e) { return {}; } };
+const nsSaveChecks = c => { try { localStorage.setItem("finanze-ns-check", JSON.stringify(c)); } catch (e) { } };
+function openNsReview(month, startId) {
+  const r = nsReviewData(month), ck = nsChecks();
+  const items = r.weeks.flatMap(w => w.items.map(x => ({ ...x, week: w })));
+  const first = items.findIndex(x => !ck[x.id]);
+  let i = startId ? Math.max(0, items.findIndex(x => x.id === startId)) : first < 0 ? items.length : first;
+  let pdf = null, pdfErr = "";
+  const { sheet } = openSheet(`Nota spese di ${MESI[+month.slice(5) - 1]}`, `<div id="nsr"></div>`);
+  buildNotaSpesePdf(month).then(x => { pdf = x; if (i >= items.length) draw(); }).catch(e => { pdfErr = e.message; if (i >= items.length) draw(); });
+  const set = (x, v) => { if (v) ck[x.id] = v; else delete ck[x.id]; nsSaveChecks(ck); };
+  const box = () => $("#nsr", sheet);
+  const draw = () => {
+    if (!box()) return;
+    window.scrollTo(0, 0); sheet.scrollTop = 0;
+    if (i >= items.length) return summary();
+    const x = items[i], st = ck[x.id];
+    box().innerHTML = `
+      <div class="nsm-top"><span>Spesa <b>${i + 1}</b> di ${items.length}</span><span>Settimana ${x.week.week}</span></div>
+      <div class="nsm-bar"><div style="width:${(i / items.length * 100).toFixed(1)}%"></div></div>
+      <div class="nsm-card ${st || ""}">
+        <div class="nsm-day">${dayLabel(x.day).replace(/^./, c => c.toUpperCase())}</div>
+        <div class="nsm-amt num">${eur(x.amount)}</div>
+        <div class="nsm-desc">${esc(x.desc)}</div>
+        <div class="nsm-lbl">Nella nota spese: <b>${esc(x.label)}</b>${x.kind === "carta" ? "<br>pagato con la carta carburante" : ""}</div>
+        ${st ? `<div class="nsm-st">${st === "ok" ? "Scontrino controllato" : "Segnata: scontrino mancante"}</div>` : ""}
+      </div>
+      <button class="btn wide nsm-ok" id="nsm-ok">Scontrino ok</button>
+      <div class="nsm-row"><button class="btn" id="nsm-prev" ${i ? "" : "disabled"}>‹ Indietro</button><button class="btn" id="nsm-miss">Manca</button>${canEdit() ? `<button class="btn" id="nsm-fix">Correggi</button>` : ""}</div>
+      <button class="btn link wide" id="nsm-end" style="margin-top:6px">Vai al riepilogo ›</button>`;
+    $("#nsm-ok", sheet).onclick = () => { set(x, "ok"); i++; draw(); };
+    $("#nsm-miss", sheet).onclick = () => { set(x, "manca"); i++; draw(); };
+    $("#nsm-prev", sheet).onclick = () => { i = Math.max(0, i - 1); draw(); };
+    $("#nsm-end", sheet).onclick = () => { i = items.length; draw(); };
+    if ($("#nsm-fix", sheet)) $("#nsm-fix", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = "";
+      if (x.kind === "carta") { const f = fuelList().find(z => "fuel:" + z.id === x.id); return openFuel(f, () => openNsReview(month, x.id)); }
+      const t = rows("transactions").find(z => z.id === x.id); if (t) openTx(t); };
+  };
+  const summary = () => {
+    const ok = items.filter(x => ck[x.id] === "ok"), miss = items.filter(x => ck[x.id] === "manca"), todo = items.filter(x => !ck[x.id]);
+    const line = x => `<button class="nsm-ln" data-go="${esc(x.id)}"><span class="d">${shortDate(x.day)}</span><span class="t">${esc(x.desc)}</span><b class="num">${eur(x.amount)}</b></button>`;
+    box().innerHTML = `
+      ${r.missing.length ? `<div class="card alert wait"><b>Mancano i km di ${r.missing.length} ${r.missing.length === 1 ? "giorno" : "giorni"}</b>${r.missing.map(d => shortDate(d)).join(", ")}</div>` : ""}
+      <div class="nsm-tot"><div><span>Scontrini ok</span><b>${ok.length}</b></div><div><span>Mancanti</span><b class="${miss.length ? "out" : ""}">${miss.length}</b></div><div><span>Da controllare</span><b class="${todo.length ? "out" : ""}">${todo.length}</b></div></div>
+      <div class="card" style="display:flex;justify-content:space-between"><span>Totale spese</span><b class="num">${eur(items.reduce((a, x) => a + x.amount, 0))}</b></div>
+      ${!items.length ? `<p class="muted">Nessuna spesa del Fondo lavoro o della carta carburante in questo mese.</p>` : ""}
+      ${miss.length ? `<div class="shop-dep">Scontrino mancante</div><div class="card">${miss.map(line).join("")}</div>` : ""}
+      ${todo.length ? `<div class="shop-dep">Ancora da controllare</div><div class="card">${todo.map(line).join("")}</div>` : ""}
+      ${items.length ? `<button class="btn wide" id="nsm-again" style="margin-bottom:10px">Ricomincia dalla prima spesa</button>` : ""}
+      <button class="btn primary wide" id="nsm-pdf" ${pdf ? "" : "disabled"}>${pdf ? "Crea il PDF" : pdfErr ? "PDF non disponibile" : "Preparo il PDF…"}</button>
+      ${pdfErr ? `<p class="err">${esc(pdfErr)}</p>` : ""}`;
+    $$("[data-go]", sheet).forEach(b => b.onclick = () => { i = items.findIndex(x => x.id === b.dataset.go); draw(); });
+    if ($("#nsm-again", sheet)) $("#nsm-again", sheet).onclick = () => { i = 0; draw(); };
+    let sure = !(todo.length || miss.length);
+    $("#nsm-pdf", sheet).onclick = () => { if (!pdf) return;
+      if (!sure) { sure = true; $("#nsm-pdf", sheet).textContent = "Crea il PDF lo stesso"; toast(`${todo.length + miss.length} spese senza scontrino controllato: tocca di nuovo per creare il PDF`); return; }
+      const f = new File([pdf.blob], pdf.fileName, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [f] }))
+        navigator.share({ files: [f], title: pdf.fileName }).catch(err => { if (err.name !== "AbortError") toast("Non riesco ad aprire la condivisione: " + err.message); });
+      else { const a = document.createElement("a"); a.href = URL.createObjectURL(pdf.blob); a.download = pdf.fileName; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); } };
+  };
+  draw();
+}
+function openKmWeek(mon) {
+  const w = kmWeek(mon), sun = addDays(mon, 6), fuel = fuelList().filter(f => f.day >= mon && f.day <= sun);
+  const { sheet } = openSheet(`Settimana ${shortDate(mon)} – ${shortDate(sun)}`, `
+    <div class="seg" style="margin-bottom:12px"><button id="kw-prev">‹ Precedente</button><button id="kw-next" ${addDays(mon, 7) > todayIso() && !rows("work_km").some(r => r.day >= addDays(mon, 7)) ? "disabled" : ""}>Successiva ›</button></div>
+    <div class="card"><div class="pw-stats"><div><span>Km di lavoro</span><b class="num">${fmtKm(w.km)}</b></div>
+      <div><span>Weekend</span><b class="num">${w.weekend ? fmtKm(w.weekend.private_km) : "—"}</b></div>
+      <div><span>Contachilometri dom.</span><b class="num">${w.weekend ? fmtKm(w.weekend.odometer) : "—"}</b></div></div></div>
+    <div class="card">${w.days.map(x => `<div class="row km-day" data-d="${x.day}"><span class="n"><b>${dayLabel(x.day)}</b><br>
+      <span class="muted" style="font-size:12px">${x.entry && kmAbsence(x.entry) ? `<b>${kmAbsence(x.entry)}</b>` : x.entry ? `${esc(x.entry.a || "—")}${x.entry.clients ? " · " + esc(x.entry.clients) : ""}` : x.missing ? '<span class="out">da completare</span>' : "—"}</span></span>
+      <b class="num">${x.entry && kmAbsence(x.entry) ? "" : x.entry ? (x.planned ? `<span class="${x.missing ? "out" : "muted"}" style="font-size:12px;font-weight:500">km da scrivere</span>` : fmtKm(x.entry.day_km) + " km") : ""}</b><span class="muted" style="margin-left:6px">›</span></div>`).join("")}
+      <div class="row km-day" data-we="1"><span class="n"><b>Weekend</b><br><span class="muted" style="font-size:12px">${w.weekend ? `contachilometri ${fmtKm(w.weekend.odometer)}` : sun < todayIso() ? '<span class="out">da completare</span>' : "domenica sera"}</span></span>
+        <b class="num">${w.weekend ? fmtKm(w.weekend.private_km) + " km" : ""}</b><span class="muted" style="margin-left:6px">›</span></div></div>
+    ${fuel.length || canEdit() ? `<div class="card"><h2>⛽ Carburante carta aziendale</h2>${fuel.map(f => `<div class="row fu-it" data-fu="${f.id}"><span class="n">${dayLabel(f.day)}${f.time || f.place ? `<br><span class="muted" style="font-size:12px">${esc([f.time, f.place].filter(Boolean).join(" · "))}${fuelComplete(f) ? " · 📄" : ""}</span>` : ""}</span>
+      <b class="num">${eur(f.amount)}</b><span class="muted" style="margin-left:6px">›</span></div>`).join("") || `<p class="muted" style="margin:0">Nessun rifornimento questa settimana.</p>`}
+      ${canEdit() ? `<button class="btn link" id="kw-fuel" style="margin-top:6px">+ Aggiungi rifornimento</button>` : ""}</div>` : ""}
+    ${canEdit() ? `<button class="btn wide" id="kw-crm" style="margin-bottom:8px">Carica paesi e clienti dal CRM</button>
+      <button class="btn wide" id="kw-off" style="margin-bottom:8px">Segna ferie o assenza</button>` : ""}
+    <button class="btn primary wide" id="kw-xls" style="margin-top:4px">📎 Nota spese Excel</button>`);
+  if ($("#kw-off", sheet)) $("#kw-off", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = "";
+    const free = w.days.find(x => !x.entry || kmEmpty(x.entry)); goSub(() => openKmWeek(mon), () => openAbsence(free ? free.day : mon, null, () => openKmWeek(mon))); };
+  if ($("#kw-crm", sheet)) $("#kw-crm", sheet).onclick = () => { sheet.remove(); document.body.style.overflow = ""; goSub(() => openKmWeek(mon), () => pickGiroCrm(() => openKmWeek(mon))); };
+  const toWeek = () => openKmWeek(mon);
+  $$(".km-day", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); goSub(toWeek, () => el.dataset.we ? openKm("weekend", sun) : openKm("giorno", el.dataset.d)); });
+  $("#kw-xls", sheet).onclick = () => { sheet.remove(); goSub(toWeek, () => openNotaSpese(addDays(mon, 3).slice(0, 7))); };
+  const back = () => openKmWeek(mon);
+  $$(".fu-it", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); goSub(toWeek, () => openFuel(fuel.find(f => f.id === el.dataset.fu), back)); });
+  if ($("#kw-fuel", sheet)) $("#kw-fuel", sheet).onclick = () => { sheet.remove(); goSub(toWeek, () => openFuel(null, back)); };
+  $("#kw-prev", sheet).onclick = () => { sheet.remove(); openKmWeek(addDays(mon, -7)); };
+  $("#kw-next", sheet).onclick = () => { sheet.remove(); openKmWeek(addDays(mon, 7)); };
+}
+
+/* ==========================================================================
+   Movimenti
+   ========================================================================== */
+function txRow(t) {
+  const wk = workKind(t);
+  if (wk) return `<div class="tx" data-id="${t.id}"><div class="ti" style="--cc:#6B5B95"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.work}</svg></div><div class="w"><div class="t">${esc(t.description || (wk === "spesa" ? "Spesa di lavoro" : "Fondo di lavoro"))}</div>
+    <div class="s"><span class="chip" style="background:#6B5B9522"><span class="dot" style="background:#6B5B95;width:7px;height:7px"></span>${wk === "spesa" ? "Lavoro · fondo aziendale" : "Fondo aziendale"}</span>
+    ${t.updated_by ? `<span>${esc(t.updated_by)}</span>` : ""}</div></div><div class="a num mv">${wk === "spesa" ? "−" : "+"}${eur(t.amount)}</div></div>`;
+  const c = catById(t.category_id); const tr = t.kind === "trasferimento";
+  const color = tr ? "#3C6A8C" : c ? c.color : "#94A099";
+  const acc = DB.t.accounts[t.account_id], to = DB.t.accounts[t.transfer_account_id];
+  const title = tr ? `${acc ? acc.name : "?"} → ${to ? to.name : "?"}` : t.description || (c ? c.name : t.kind === "entrata" ? "Entrata" : "Spesa");
+  const sign = t.kind === "entrata" ? "+" : t.kind === "spesa" ? "−" : "";
+  const tile = tr ? `<div class="ti"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.swap}</svg></div>`
+    : !c ? `<div class="ti q"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.ask}</svg></div>`
+    : `<div class="ti" style="--cc:${color}"><span>${esc((catById(c.parent_id) || c).name.slice(0, 1).toUpperCase())}</span></div>`;
+  return `<div class="tx" data-id="${t.id}">${tile}<div class="w"><div class="t">${esc(title)}</div>
+    <div class="s">${!tr && !c ? `<span class="ask">Scegli la categoria</span>` : `<span class="chip" style="background:${color}22"><span class="dot" style="background:${color};width:7px;height:7px"></span>${esc(tr ? "Trasferimento" : catLabel(c.id))}</span>`}
+    ${t.updated_by ? `<span>${esc(t.updated_by)}</span>` : ""}</div></div>
+    <div class="a num ${t.kind === "entrata" ? "in" : t.kind === "spesa" ? "out" : "mv"}">${sign}${eur(t.amount)}</div></div>`;
+}
+function bindTxRows(list) { $$("#view .tx").forEach(el => el.onclick = () => openTx(list.find(t => t.id === el.dataset.id))); }
+
+function viewMovimenti() {
+  const d = monthData(S.month); const q = S.search.trim().toLowerCase(), f = S.mkind || "";
+  const base = d.tx.filter(t => kmMine() || !workKind(t));
+  const toSort = base.filter(t => t.kind !== "trasferimento" && !workKind(t) && !t.category_id).length;
+  const list = base.filter(t => (!f || (f === "da" ? t.kind !== "trasferimento" && !workKind(t) && !t.category_id : (workKind(t) || t.kind) === f))
+    && (!q || [t.description, catLabel(t.category_id), amountText(t.amount)].some(x => String(x || "").toLowerCase().includes(q))));
+  const days = {}; list.forEach(t => (days[t.occurred_on] = days[t.occurred_on] || []).push(t));
+  const t0 = todayIso(), t1 = addDays(t0, -1);
+  const dayTitle = day => day === t0 ? "Oggi" : day === t1 ? "Ieri" : dayLabel(day).replace(/^./, c => c.toUpperCase());
+  const net = txs => txs.reduce((a, t) => a + (t.kind === "entrata" || workKind(t) === "entrata" ? t.amount : t.kind === "spesa" || workKind(t) === "spesa" ? -t.amount : 0), 0);
+  $("#view").innerHTML = `
+    <label class="mv-search"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.search}</svg><input type="search" id="q" placeholder="Cerca un movimento" aria-label="Cerca un movimento" value="${esc(S.search)}"></label>
+    <div class="fchips" role="group" aria-label="Filtra">${[["", "Tutti"], ["spesa", "Uscite"], ["entrata", "Entrate"]].concat(toSort ? [["da", `Senza categoria · ${toSort}`]] : [])
+      .map(([k, l]) => `<button data-f="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;margin:0 6px 12px" class="muted">
+      <span>Entrate <b class="in num">${eur(d.income)}</b></span><span>Uscite <b class="out num">${eur(d.expense)}</b></span></div>
+    ${Object.keys(days).length ? Object.entries(days).map(([day, txs]) => { const n = round2(net(txs));
+      return `<div class="dgroup"><div class="dhead"><b>${dayTitle(day)}</b><span class="num">${n > 0 ? "+" : n < 0 ? "−" : ""}${eur(Math.abs(n))}</span></div>
+        <div class="list">${txs.map(txRow).join("")}</div></div>`; }).join("")
+      : `<div class="empty">${base.length ? "Nessun movimento trovato." : "Nessun movimento in " + MESI[+S.month.slice(5) - 1] + ".<br>Tocca + per aggiungerne uno."}</div>`}`;
+  const q$ = $("#q"); q$.oninput = () => { S.search = q$.value; const p = q$.selectionStart; viewMovimenti(); const n = $("#q"); n.focus(); n.setSelectionRange(p, p); };
+  $$("[data-f]").forEach(b => b.onclick = () => { S.mkind = b.dataset.f; viewMovimenti(); });
+  bindTxRows(base);
+}
+
+/* ---------- inserimento / modifica ---------- */
+function openTx(t, preset) {
+  if (!canEdit()) { if (!t) toast("Il tuo utente può solo consultare i dati"); if (!t) return; }
+  const edit = !!t;
+  const accs = balances();
+  if (!accs.length) { toast("Non ci sono conti: aspetta la sincronizzazione"); sync(); return; }
+  const x = t ? { ...t } : Object.assign({ kind: "spesa", occurred_on: S.month === thisMonth() ? todayIso() : S.month + "-01",
+    account_id: (accs.find(a => a.type === "contanti") || accs[0]).id }, preset || {});
+  const wkEdit = t ? workKind(t) : null, fund = fundAccount();
+  if (wkEdit) { x.kind = wkEdit; x.account_id = wkEdit === "spesa" ? t.account_id : t.transfer_account_id; x.transfer_account_id = null; x.category_id = null; }
+  let work = !!(wkEdit || (preset && preset.work));
+  let kind = x.kind, cat = x.category_id || null, catTouched = edit && !!cat;
+  const sheet = document.createElement("div"); sheet.className = "sheet"; sheet.id = "sheet";
+  sheet.innerHTML = `
+    <div class="sheet-head"><button class="btn link" id="xc">Annulla</button><h2>${edit ? "Movimento" : "Nuova spesa"}</h2><span style="width:60px"></span></div>
+    ${!edit ? `<button class="scan" id="scan"><svg viewBox="0 0 24 24">${ICON.cam}</svg>Scansiona lo scontrino</button>
+      <input type="file" accept="image/*" capture="environment" id="scanf" hidden>` : ""}
+    <div class="seg" id="xk" style="margin-bottom:6px"><button data-k="spesa">Spesa</button><button data-k="entrata">Entrata</button><button data-k="trasferimento">Trasferimento</button></div>
+    <input class="amount num" id="xa" inputmode="decimal" placeholder="0,00" value="${esc(amountText(x.amount))}" autocomplete="off" aria-label="Importo in euro">
+    <div class="amount-line">euro</div>
+    <label class="f"><span>Descrizione</span><input type="text" id="xd" value="${esc(x.description)}" placeholder="Es. Esselunga, farmacia, pizzeria" autocomplete="off"></label>
+    <div class="sugg" id="xs"></div>
+    ${fund ? `<div class="work-w" id="xwork-w"><label><input type="checkbox" id="xwork" ${work ? "checked" : ""}> <span id="xwork-l"></span></label>
+      <label id="xworkr-w" class="sub"><input type="checkbox" id="xworkr"> Ricorda questa descrizione come di lavoro</label></div>` : ""}
+    <div id="xcats"></div>
+    ${people().length ? `<div id="xper"></div>` : ""}
+    ${trips().filter(v => v.status !== "annullata").length ? `<label class="f" id="xtrip-w"><span>Vacanza</span><select id="xtrip">
+      ${edit ? "" : `<option value="auto">In base alle date</option>`}<option value="">Nessuna</option>
+      ${trips().filter(v => v.status !== "annullata").sort((a, b) => String(b.start_date).localeCompare(String(a.start_date))).map(v => `<option value="${v.id}">${esc(v.name)}${v.status === "bozza" ? " (da decidere)" : ""}</option>`).join("")}</select></label>` : ""}
+    <div id="xto-w"><label class="f"><span>Verso il conto</span><select id="xto">${accs.map(a => `<option value="${a.id}" ${a.id === x.transfer_account_id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <label class="f"><span id="xacc-l">Conto</span><select id="xacc">${accs.map(a => `<option value="${a.id}" ${a.id === x.account_id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
+      <label class="f"><span>Data</span><input type="date" id="xdt" value="${x.occurred_on}"></label>
+    </div>
+    ${edit && x.updated_by ? `<p class="hint">Ultima modifica di ${esc(x.updated_by)}</p>` : ""}
+    <p class="err" id="xe"></p>
+    ${edit && canEdit() ? `<button class="btn danger wide" id="xdel" style="margin-top:8px">Elimina movimento</button>` : ""}
+    <div class="save-bar">${canEdit() ? `<button class="btn primary wide" id="xsave">${edit ? "Salva" : "Aggiungi"}</button>` : `<button class="btn wide" id="xclose">Chiudi</button>`}</div>`;
+  document.body.appendChild(sheet);
+  document.body.style.overflow = "hidden";
+  const close = () => { sheet.remove(); document.body.style.overflow = ""; };
+
+  const drawCats = () => {
+    if (kind === "trasferimento") { $("#xcats").innerHTML = ""; return; }
+    const tree = catTree(kind);
+    const sel = cat && catById(cat); const parent = sel ? (sel.parent_id ? sel.parent_id : sel.id) : null;
+    const node = tree.find(n => n.c.id === parent);
+    $("#xcats").innerHTML = `<label class="f" style="margin-bottom:4px"><span>Categoria</span></label>
+      <div class="chips">${tree.map(({ c }) => `<button data-c="${c.id}" class="${c.id === parent ? "on" : ""}"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</button>`).join("")}</div>
+      ${node && node.kids.length ? `<div class="chips sub"><button data-c="${node.c.id}" class="${cat === node.c.id ? "on" : ""}">Tutto ${esc(node.c.name)}</button>
+        ${node.kids.map(k => `<button data-c="${k.id}" class="${k.id === cat ? "on" : ""}"><span class="dot" style="background:${k.color}"></span>${esc(k.name)}</button>`).join("")}</div>` : ""}`;
+    $$("#xcats [data-c]").forEach(b => b.onclick = () => { cat = b.dataset.c; catTouched = true; $("#xs").textContent = ""; drawCats(); });
+  };
+  const suggest = () => {
+    if (catTouched || kind === "trasferimento") return;
+    const id = suggestCategory($("#xd").value, kind);
+    if (id) { cat = id; $("#xs").textContent = "Categoria proposta in automatico: " + catLabel(id); drawCats(); }
+  };
+  const tripNow = edit ? (tripMap()[x.id] || "") : "auto";
+  let per = txPeople(x), perTouched = edit;
+  const drawPer = () => {
+    if (!$("#xper")) return;
+    if (kind !== "spesa") { $("#xper").innerHTML = ""; return; }
+    $("#xper").innerHTML = `<label class="f" style="margin-bottom:4px"><span>Per chi (facoltativo${people().length > 1 ? ", anche più persone" : ""})</span></label>
+      <div class="chips">${people().map(p => `<button data-per="${p.id}" class="${per.includes(p.id) ? "on" : ""}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</button>`).join("")}</div>
+      ${per.length > 1 ? `<p class="hint" style="margin:-2px 0 10px">Divisa in parti uguali tra ${per.length} persone.</p>` : ""}`;
+    $$("#xper [data-per]").forEach(b => b.onclick = () => { const id = b.dataset.per; per = per.includes(id) ? per.filter(x => x !== id) : per.concat(id); perTouched = true; drawPer(); });
+  };
+  const suggestPer = () => { if (perTouched || kind !== "spesa") return; const p = autoPerson({ description: $("#xd").value }); if (p.join() !== per.join()) { per = p; drawPer(); } };
+  const setKind = k => {
+    kind = k; $$("#xk button").forEach(b => b.classList.toggle("on", b.dataset.k === k));
+    $("#xto-w").style.display = k === "trasferimento" ? "" : "none";
+    $("#xacc-l").textContent = k === "trasferimento" ? "Dal conto" : "Conto";
+    if (cat && catById(cat) && catById(cat).kind !== k) cat = null;
+    if (k === "trasferimento" && $("#xto").value === $("#xacc").value && accs.length > 1) $("#xto").value = accs.find(a => a.id !== $("#xacc").value).id;
+    drawCats(); suggest(); drawPer(); if ($("#xtrip-w")) $("#xtrip-w").style.display = k === "spesa" ? "" : "none";
+    $("h2", sheet).textContent = edit ? "Movimento" : k === "spesa" ? "Nuova spesa" : k === "entrata" ? "Nuova entrata" : "Trasferimento";
+  };
+  const setWork = () => {
+    if (!$("#xwork-w")) return;
+    const can = kind !== "trasferimento"; work = can && $("#xwork").checked;
+    $("#xwork-w").style.display = can ? "" : "none";
+    $("#xwork-l").textContent = kind === "entrata" ? "Soldi dell'azienda (anticipo o rimborso del fondo)" : "Spesa di lavoro (fondo dell'azienda)";
+    $("#xworkr-w").style.display = work && $("#xd").value.trim() ? "" : "none";
+    ["#xcats", "#xper", "#xtrip-w", "#xs"].forEach(q => { if ($(q)) $(q).style.display = work ? "none" : (q === "#xtrip-w" && kind !== "spesa" ? "none" : ""); });
+  };
+  $$("#xk button").forEach(b => b.onclick = () => { setKind(b.dataset.k); setWork(); });
+  setKind(kind);
+  if ($("#xwork")) { $("#xwork").onchange = setWork; $("#xd").addEventListener("input", setWork); setWork(); }
+  if ($("#xtrip")) $("#xtrip").value = tripNow;
+  $("#xd").oninput = () => { suggest(); suggestPer(); };
+  $("#xc").onclick = close;
+  if ($("#xclose")) $("#xclose").onclick = close;
+  if (!edit) setTimeout(() => $("#xa").focus(), 250);
+
+  if ($("#scan")) {
+    $("#scan").onclick = () => $("#scanf").click();
+    $("#scanf").onchange = async () => {
+      const f = $("#scanf").files[0]; if (!f) return;
+      const btn = $("#scan"); btn.disabled = true;
+      try {
+        const r = await SCONTRINO.read(f, msg => { btn.textContent = msg; });
+        const found = [];
+        if (r.amount) { $("#xa").value = amountText(r.amount.toFixed(2)); found.push("importo"); }
+        if (r.date) { $("#xdt").value = r.date; found.push("data"); }
+        if (r.merchant && !$("#xd").value) { $("#xd").value = r.merchant; found.push("esercente"); }
+        const id = suggestCategory(r.text, "spesa");
+        if (id && !catTouched) { cat = id; $("#xs").textContent = "Categoria proposta dallo scontrino: " + catLabel(id); drawCats(); } else suggest();
+        btn.innerHTML = `<svg viewBox="0 0 24 24">${ICON.cam}</svg>${found.length ? "Letto: " + found.join(", ") + ". Controlla e salva" : "Non sono riuscito a leggerlo: inserisci a mano"}`;
+        if (!r.amount) $("#xa").focus();
+      } catch (err) {
+        btn.innerHTML = `<svg viewBox="0 0 24 24">${ICON.cam}</svg>${esc(err.message || "Lettura non riuscita")}`;
+      } finally { btn.disabled = false; $("#scanf").value = ""; }   // la foto non viene conservata
+    };
+  }
+  if ($("#xdel")) $("#xdel").onclick = () => {
+    if (!confirm("Eliminare questo movimento?")) return;
+    deleteTransaction(x.id); close(); toast("Movimento eliminato"); render();
+  };
+  if ($("#xsave")) $("#xsave").onclick = async () => {
+    try {
+      const r = await saveTransaction({ id: x.id, kind, amount: $("#xa").value, occurred_on: $("#xdt").value, account_id: $("#xacc").value,
+        category_id: cat, transfer_account_id: kind === "trasferimento" ? $("#xto").value : null, description: $("#xd").value,
+        ...(kind === "spesa" && (perTouched && (edit ? per.join() !== txPeople(x).join() : per.length)) ? { person_ids: per } : {}),
+        ...(edit && kind !== "spesa" && x.person_id ? { person_ids: [] } : {}),
+        ...($("#xwork") && kind !== "trasferimento" ? { work, work_remember: $("#xworkr").checked } : {}),
+        ...(x.recurring_id !== undefined && edit ? { recurring_id: x.recurring_id } : {}), ...(preset && preset.recurring_id ? { recurring_id: preset.recurring_id } : {}) });
+      if (!work && $("#xtrip") && $("#xtrip").value !== tripNow && $("#xtrip").value !== "auto") setTxTrip(r.id, $("#xtrip").value || null);
+      close();
+      const rec = !edit && r.recurring_id && DB.t.recurrings[r.recurring_id];
+      toast(work ? (edit ? "Movimento di lavoro aggiornato" : "Messo nel fondo di lavoro") : rec ? `Aggiunto e collegato a «${rec.name}»` : edit ? "Movimento aggiornato" : "Aggiunto");
+      S.month = r.occurred_on.slice(0, 7); render();
+    } catch (err) { $("#xe").textContent = err.message; }
+  };
+}
+
+/* ==========================================================================
+   Spesa
+   ========================================================================== */
+let shopSuggesting = false;
+function viewSpesa() {
+  if (!shopSuggesting) { shopSuggesting = true; shopSuggest().then(n => { shopSuggesting = false; if (n && S.view === "spesa" && !$("#sheet")) viewSpesa(); }); }
+  const items = shopItems(), todo = items.filter(i => !i.checked_at).sort((a, b) => a.added_on.localeCompare(b.added_on) || String(a.updated_at).localeCompare(String(b.updated_at)));
+  const cart = items.filter(i => i.checked_at).sort((a, b) => String(b.checked_at).localeCompare(String(a.checked_at)));
+  const prodById = Object.fromEntries(products().map(p => [p.id, p]));
+  const dep = i => (prodById[i.product_id] || {}).department || "Altro";
+  const byDep = {}; todo.forEach(i => (byDep[dep(i)] = byDep[dep(i)] || []).push(i));
+  const deps = SHOP_DEPARTMENTS.filter(d => byDep[d]).concat(Object.keys(byDep).filter(d => !SHOP_DEPARTMENTS.includes(d)));
+  const st = productStats(), onList = new Set(todo.map(i => i.product_id));
+  const soon = products().filter(p => +p.auto && !onList.has(p.id) && st[p.id].next_due && daysTo(st[p.id].next_due) <= 7)
+    .map(p => ({ p, left: daysTo(st[p.id].next_due) })).sort((a, b) => a.left - b.left);
+  const paused = shopParams().pause_on_trip && shopPaused();
+  const wakeOk = "wakeLock" in navigator;
+  $("#view").innerHTML = `
+    <label class="wake-row"><span>☀︎ Schermo sempre acceso${wakeOk ? "" : `<br><span class="muted" style="font-size:12px">Serve iOS 18.4 o successivo</span>`}</span>
+      <input type="checkbox" class="switch" id="sh-wake" ${wakeWanted() && wakeOk ? "checked" : ""} ${wakeOk ? "" : "disabled"}></label>
+    ${paused ? `<div class="card alert wait">Siete in vacanza (${esc(paused.name)}): i suggerimenti automatici sono in pausa.</div>` : ""}
+    ${canEdit() ? `<form class="shop-add" id="sa"><input type="text" id="sa-n" list="sa-l" placeholder="Scrivi un prodotto…" autocomplete="off" enterkeyhint="done">
+      <button class="btn primary" aria-label="Aggiungi">+</button><datalist id="sa-l">${products().map(p => `<option value="${esc(p.name)}">`).join("")}</datalist></form>
+      <button class="scan" id="sh-cat" style="margin-bottom:14px">Scegli dal catalogo (${products().length} prodotti)</button>` : ""}
+    ${todo.length ? deps.map(d => `<div class="shop-dep">${esc(d)}</div><div class="card shop-card">${byDep[d].map(i => `<div class="shop-it" data-chk="${i.id}">
+        <span class="box"></span><span class="n">${esc(i.name)}${i.qty ? ` <span class="muted">· ${esc(i.qty)}</span>` : ""}${i.source === "suggerito" ? ` <span class="badge wait">suggerito</span>` : ""}</span>
+        ${canEdit() ? (i.source === "suggerito" ? `<button class="btn link" data-snz="${i.id}">Ne ho ancora</button>` : `<button class="btn link muted" data-rm="${i.id}" aria-label="Togli">✕</button>`) : ""}</div>`).join("")}</div>`).join("")
+      : cart.length ? `<div class="empty">Tutto nel carrello!</div>` : `<div class="card shop-help"><h2>Come funziona</h2><ol>
+        <li><b>Aggiungi</b> i prodotti dal catalogo qui sopra, oppure scrivili. Se un prodotto non c'è, lo metto nel catalogo per la volta dopo.</li>
+        <li><b>Al supermercato</b> tocca un prodotto quando lo metti nel carrello.</li>
+        <li><b>Alla cassa</b> tocca «Ho finito».</li>
+        <li>Dopo 3 acquisti imparo ogni quanto lo comprate e lo rimetto in lista da solo, con l'etichetta <span class="badge wait">suggerito</span>.</li></ol></div>`}
+    ${cart.length ? `<div class="shop-dep">Nel carrello (${cart.length})</div><div class="card shop-card">${cart.map(i => `<div class="shop-it done" data-unchk="${i.id}">
+        <span class="box"></span><span class="n">${esc(i.name)}</span></div>`).join("")}</div>
+      ${canEdit() ? `<button class="btn primary wide" id="sh-done" style="margin-bottom:16px">Ho finito</button>` : ""}` : ""}
+    ${soon.length ? `<div class="card"><h2>In arrivo</h2>${soon.map(({ p, left }) => `<div class="row"><span class="n">${esc(p.name)}<br>
+      <span class="muted" style="font-size:12px">ogni ${st[p.id].interval} gg · ${left <= 0 ? "dovrebbe essere finito" : left === 1 ? "domani" : "tra " + left + " giorni"}</span></span>
+      ${canEdit() ? `<button class="btn" data-now="${p.id}" style="padding:6px 14px">+</button>` : ""}</div>`).join("")}</div>` : ""}`;
+  if ($("#sh-wake")) $("#sh-wake").onchange = e => { try { localStorage.setItem("finanze-wake", e.target.checked ? "1" : "0"); } catch (x) { } keepAwake(); };
+  if ($("#sa")) $("#sa").onsubmit = async e => {
+    e.preventDefault(); const v = $("#sa-n").value; if (!v.trim()) return;
+    try { const r = await addToList(v); toast(r.exists ? `${r.name} è già in lista` : r.created ? `${r.name} aggiunto (e messo nel catalogo)` : `${r.name} aggiunto`); viewSpesa(); $("#sa-n").focus(); }
+    catch (err) { toast(err.message); }
+  };
+  if ($("#sh-cat")) $("#sh-cat").onclick = () => openShopCatalog();
+  $$("[data-chk]").forEach(el => el.onclick = e => { if (e.target.closest("button") || !canEdit()) return; checkItem(el.dataset.chk, true); viewSpesa(); });
+  $$("[data-unchk]").forEach(el => el.onclick = () => { if (!canEdit()) return; checkItem(el.dataset.unchk, false); viewSpesa(); });
+  $$("[data-rm]").forEach(b => b.onclick = () => { removeItem(b.dataset.rm, false); viewSpesa(); });
+  $$("[data-snz]").forEach(b => b.onclick = () => { const u = removeItem(b.dataset.snz, true); toast(u ? `Va bene, lo ripropongo dal ${shortDate(u)}` : "Tolto"); viewSpesa(); });
+  $$("[data-now]").forEach(b => b.onclick = async () => { await addToList(DB.t.shop_products[b.dataset.now].name); viewSpesa(); });
+  if ($("#sh-done")) $("#sh-done").onclick = () => {
+    const n = finishShopping(); viewSpesa();
+    const cat = cats().find(c => c.name === "Spesa alimentare" && !c.deleted_at);
+    if (confirm(`Spesa finita (${n} prodotti). Vuoi registrare anche l'importo?`)) openTx(null, { kind: "spesa", occurred_on: todayIso(), category_id: cat ? cat.id : null });
+  };
+}
+
+function openShopCatalog() {
+  S.catQ = "";
+  const { sheet } = openSheet("Catalogo", `<input type="search" id="cq" placeholder="Cerca nel catalogo" autocomplete="off" style="margin-bottom:12px"><div id="cl"></div>
+    <p class="hint">Tocca un prodotto per metterlo in lista (o toglierlo). Prodotti, reparti e cadenze si modificano dal Mac.</p>`);
+  const draw = () => {
+    const q = shopKey(S.catQ), st = productStats();
+    const onList = new Set(shopItems().filter(i => !i.checked_at).map(i => i.product_id));
+    const list = products().filter(p => !q || shopKey(p.name).includes(q));
+    const byDep = {}; list.forEach(p => (byDep[p.department || "Altro"] = byDep[p.department || "Altro"] || []).push(p));
+    const deps = SHOP_DEPARTMENTS.filter(d => byDep[d]).concat(Object.keys(byDep).filter(d => !SHOP_DEPARTMENTS.includes(d)));
+    $("#cl", sheet).innerHTML = deps.map(d => `<div class="shop-dep">${esc(d)}</div><div class="card shop-card">${byDep[d].map(p => `<div class="shop-it ${onList.has(p.id) ? "picked" : ""}" data-cp="${p.id}">
+      <span class="box"></span><span class="n">${esc(p.name)}${st[p.id] && st[p.id].interval ? `<br><span class="muted" style="font-size:12px">ogni ${st[p.id].interval} gg</span>` : ""}</span>
+      ${onList.has(p.id) ? '<span class="badge ok">in lista</span>' : ""}</div>`).join("")}</div>`).join("")
+      || `<div class="empty">Nessun prodotto${q ? ` con «${esc(S.catQ)}»` : ""}.${q && canEdit() ? `<br><button class="btn primary" id="cadd" style="margin-top:12px">Aggiungi «${esc(S.catQ)}»</button>` : ""}</div>`;
+    $$("[data-cp]", sheet).forEach(el => el.onclick = async () => {
+      if (!canEdit()) return;
+      const it = shopItems().find(i => !i.checked_at && i.product_id === el.dataset.cp);
+      if (it) removeItem(it.id, false); else await addToList(DB.t.shop_products[el.dataset.cp].name);
+      draw();
+    });
+    if ($("#cadd", sheet)) $("#cadd", sheet).onclick = async () => { const r = await addToList(S.catQ); toast(`${r.name} aggiunto (e messo nel catalogo)`); S.catQ = ""; $("#cq", sheet).value = ""; draw(); };
+  };
+  $("#cq", sheet).oninput = () => { S.catQ = $("#cq", sheet).value; draw(); };
+  draw();
+}
+
+/* ==========================================================================
+   Scadenze
+   ========================================================================== */
+function viewScadenze() {
+  const v = recurringView(S.month).filter(r => r.status === "attiva");
+  const due = v.filter(r => r.due).sort((a, b) => a.due.localeCompare(b.due));
+  const fixed = v.filter(r => r.kind === "spesa").reduce((s, r) => s + r.monthly, 0);
+  const STATE = { pagata: ["Pagata", "ok"], in_arrivo: ["In arrivo", "wait"], in_ritardo: ["Non trovata", "late"] };
+  const in60 = addDays(todayIso(), 60);
+  const next = v.filter(r => r.next_due && r.next_due <= in60 && !due.some(d => d.id === r.id && d.due === r.next_due))
+    .sort((a, b) => a.next_due.localeCompare(b.next_due));
+  $("#view").innerHTML = `
+    <button class="btn link" id="dl-back" style="margin:-6px 0 6px">‹ Riepilogo</button>
+    <div class="card"><div class="muted" style="font-size:13px">Spese fisse al mese</div><div class="big out num" style="font-size:26px;font-weight:700">${eur(fixed)}</div></div>
+    <div class="card"><h2>Scadenze di ${MESI[+S.month.slice(5) - 1]}</h2>
+      ${due.length ? due.map(r => `<div class="row"><span class="muted num" style="width:48px">${shortDate(r.due)}</span>
+        <span class="n">${esc(r.name)}<br><span class="badge ${STATE[r.state][1]}">${STATE[r.state][0]}</span></span>
+        <span style="text-align:right"><b class="num">${eur(r.amount)}</b><br>${r.state !== "pagata" && canEdit() ? `<button class="btn link" data-reg="${r.id}">Registra</button>` : ""}</span></div>`).join("")
+        : `<p class="muted">Nessuna scadenza in questo mese.</p>`}
+    </div>
+    ${autoDeadlines().length ? `<div class="card"><h2>Auto</h2>${autoDeadlines().map(x => `<div class="row">
+      <span class="muted num" style="width:48px">${shortDate(x.due)}</span><span class="n">${esc(x.label)} ${esc(x.vehicle)}</span>
+      ${x.level ? `<span class="badge ${x.level === "30" ? "wait" : "late"}">${x.days <= 0 ? (x.days === 0 ? "Oggi" : "Scaduto") : "tra " + x.days + " gg"}</span>` : `<span class="muted" style="font-size:13px">tra ${x.days} gg</span>`}</div>`).join("")}
+      <p class="hint" style="margin:8px 0 0">Per segnare un pagamento o cambiare le date usa la sezione Auto sul Mac.</p></div>` : ""}
+    ${familyDeadlines().filter(x => x.days <= 60).length ? `<div class="card"><h2>Famiglia</h2>${familyDeadlines().filter(x => x.days <= 60).map(x => `<div class="row" data-gofam>
+      <span class="muted num" style="width:48px">${shortDate(x.due)}</span><span class="n">${esc(x.label)}${x.person !== "Famiglia" ? `<br><span class="muted" style="font-size:12px">${esc(x.person)}</span>` : ""}</span>${dueBadgeW(x)}</div>`).join("")}</div>` : ""}
+    ${next.length ? `<div class="card"><h2>Più avanti</h2>${next.map(r => `<div class="row"><span class="muted num" style="width:48px">${shortDate(r.next_due)}</span>
+      <span class="n">${esc(r.name)}</span><b class="num">${eur(r.amount)}</b></div>`).join("")}</div>` : ""}
+    <p class="hint" style="margin:4px">Le spese ricorrenti si gestiscono dal programma sul Mac. Quelle pagate in banca si segnano da sole quando importi l'estratto conto; per le altre usa «Registra».</p>`;
+  $$("[data-gofam]").forEach(el => el.onclick = () => { S.view = "famiglia"; S.famTab = "scadenze"; render(); window.scrollTo(0, 0); });
+  $("#dl-back").onclick = () => { S.view = "home"; render(); window.scrollTo(0, 0); };
+  $$("[data-reg]").forEach(b => b.onclick = async () => {
+    const r = DB.t.recurrings[b.dataset.reg];
+    if (!confirm(`Registrare il pagamento di «${r.name}» (${eur(r.amount)})?`)) return;
+    try { await registerRecurring(r.id, S.month); toast("Pagamento registrato"); render(); } catch (e) { toast(e.message); }
+  });
+}
+
+/* ==========================================================================
+   Famiglia: persone, documenti e visite, paghetta, spese per il 730, ISEE e 730
+   ========================================================================== */
+const DOC_SUGGEST = ["Carta d'identità", "Passaporto", "Patente", "Tessera sanitaria", "Permesso di soggiorno"];
+const VISIT_SUGGEST = ["Pediatra", "Dentista", "Oculista", "Medico di base", "Vaccino", "Ginecologo", "Dermatologo"];
+const YD_STATE = { "da fare": "late", "in corso": "wait", "fatto": "ok" };
+const longDateW = iso => { const d = new Date(iso + "T12:00:00"); return `${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()}`; };
+function dueBadgeW(x) {
+  if (x.days == null) return "";
+  if (x.level) return `<span class="badge ${x.level === "30" ? "wait" : "late"}">${x.days < 0 ? "Scaduto" : x.days === 0 ? "Oggi" : "tra " + x.days + " gg"}</span>`;
+  return `<span class="muted" style="font-size:13px">${x.days < 0 ? "scaduto" : x.days > 400 ? shortDate(x.due || x.due_date) + " " + (x.due || x.due_date).slice(0, 4) : "tra " + x.days + " gg"}</span>`;
+}
+/* Navigazione tra le schermate: nella gestione spese aziendali (pulsante Km) «‹ Indietro» riporta al menu precedente,
+   non al Riepilogo. sheetBack = dove tornare per la prossima schermata (una volta sola); S.kmMode = siamo dentro il menu Km. */
+let sheetBack = null;
+const goSub = (back, fn) => { sheetBack = back; fn(); };
+function openSheet(title, body, onSave, { saveLabel = "Salva", del, hub = false } = {}) {
+  const back = hub ? null : sheetBack || (S.kmMode ? openKmHub : null); sheetBack = null;
+  const sheet = document.createElement("div"); sheet.className = "sheet"; sheet.id = "sheet";
+  sheet.innerHTML = `<div class="sheet-head"><button class="btn link" id="sx">${hub ? "‹ Riepilogo" : back ? "‹ Indietro" : "Chiudi"}</button><h2>${esc(title)}</h2><span style="width:60px"></span></div>
+    ${body}<p class="err" id="se"></p>
+    ${del && canEdit() ? `<button class="btn danger wide" id="sdel" style="margin-top:8px">${esc(del.label)}</button>` : ""}
+    ${onSave && canEdit() ? `<div class="save-bar"><button class="btn primary wide" id="ss">${esc(saveLabel)}</button></div>` : ""}`;
+  document.body.appendChild(sheet); document.body.style.overflow = "hidden";
+  // dentro «Work» le schermate restano nella barra laterale di destra, con la pagina oscurata a sinistra
+  if (S.kmMode && !hub) {
+    sheet.classList.add("drawer", "on", "sub");
+    let bg = document.querySelector(".drawer-bg");
+    if (!bg) { bg = document.createElement("div"); bg.className = "drawer-bg on"; document.body.insertBefore(bg, sheet); }
+    bg.onclick = () => $("#sx", sheet).click();
+    const mo = new MutationObserver(() => { if (!sheet.isConnected) { mo.disconnect(); setTimeout(() => { if (!document.querySelector(".sheet.drawer")) bg.remove(); }, 300); } });
+    mo.observe(document.body, { childList: true });
+  }
+  // tornando indietro si riapre il menu precedente, a meno che la schermata ne abbia già aperta un'altra
+  const close = () => { sheet.remove(); document.body.style.overflow = ""; S.keepKm = !!back; render(); S.keepKm = false;
+    if (back) setTimeout(() => { if (!document.querySelector(".sheet")) back(); }, 120); };
+  $("#sx", sheet).onclick = hub ? () => { S.kmMode = false; sheet.remove(); document.body.style.overflow = ""; render(); } : close;
+  let busy = false;   // niente doppi tocchi mentre salva (es. password delle pastiglie, che richiede un secondo)
+  const run = async fn => { if (busy) return; busy = true; const b = $("#ss", sheet), lbl = b && b.textContent; if (b) { b.disabled = true; b.textContent = "Un attimo…"; }
+    try { const msg = await fn(); close(); if (msg) toast(msg); } catch (e) { $("#se", sheet).textContent = e.message; if (b) { b.disabled = false; b.textContent = lbl; } } finally { busy = false; } };
+  if ($("#ss", sheet)) $("#ss", sheet).onclick = () => run(onSave);
+  if ($("#sdel", sheet)) $("#sdel", sheet).onclick = () => confirm(del.confirm) && run(del.run);
+  return { sheet, close, run };
+}
+
+function viewFamiglia() {
+  S.famTab = S.famTab || "persone";
+  const ppl = people();
+  if (!ppl.length && S.famTab !== "vacanze") {
+    $("#view").innerHTML = `<div class="card"><h2>Chi c'è in famiglia?</h2>
+      <p class="hint">Aggiungi le persone: poi potrai segnare documenti e visite con le scadenze, vedere quanto si spende per ciascuno,
+        tenere la paghetta dei figli e preparare le spese per il 730.</p>
+      ${canEdit() ? `<div class="chips" id="qf">${[["Papà", "adulto"], ["Mamma", "adulto"], ["Figlia", "figlio"], ["Figlio", "figlio"]]
+        .map(([n, r]) => `<button data-n="${n}" data-r="${r}" class="on">${n}</button>`).join("")}</div>
+      <p class="hint">Tocca per togliere chi non serve; i nomi si cambiano dopo.</p>
+      <button class="btn primary wide" id="qf-go">Crea</button>
+      <button class="btn link" id="qf-one">Oppure aggiungi una persona per volta</button>` : ""}</div>
+      <button class="btn link" id="qf-trip">Vai alle vacanze</button>`;
+    $("#qf-trip").onclick = () => { S.famTab = "vacanze"; viewFamiglia(); };
+    $$("#qf button").forEach(b => b.onclick = () => b.classList.toggle("on"));
+    if ($("#qf-go")) $("#qf-go").onclick = () => {
+      $$("#qf button.on").forEach(b => savePerson({ name: b.dataset.n, role: b.dataset.r }));
+      toast("Famiglia creata"); render();
+    };
+    if ($("#qf-one")) $("#qf-one").onclick = () => openPersonW();
+    return;
+  }
+  $("#view").innerHTML = `<div class="seg" id="ft" style="margin-bottom:14px">
+      <button data-t="persone">Persone</button><button data-t="scadenze">Scadenze</button><button data-t="fisco">730·ISEE</button><button data-t="vacanze">Vacanze</button></div>
+    <div id="fbody"></div>`;
+  $$("#ft button").forEach(b => { b.classList.toggle("on", b.dataset.t === S.famTab); b.onclick = () => { S.famTab = b.dataset.t; viewFamiglia(); }; });
+  ({ persone: famPersone, scadenze: famScadenze, fisco: famFisco, vacanze: famVacanze })[S.famTab]();
+}
+
+function famPersone() {
+  const y = new Date().getFullYear(), v = peopleView(y);
+  $("#fbody").innerHTML = v.people.map(p => {
+    const warn = p.items.filter(i => i.level);
+    return `<div class="card person-w" data-p="${p.id}" style="border-left:5px solid ${p.color || "var(--accent)"}">
+      <div class="row" style="padding:0;border:0"><span class="n"><b style="font-size:17px">${esc(p.name)}</b>
+        <span class="muted" style="font-size:13px"> ${p.role === "figlio" ? "figlio/a" : "adulto"}${p.birth_year ? ", " + (y - p.birth_year) + " anni" : ""}</span></span>
+        <span class="muted">›</span></div>
+      <div class="pw-stats"><div><span>Spese ${y}</span><b class="num">${eur(p.year_total)}</b></div>
+        ${p.allowance ? `<div><span>Paghetta</span><b class="num">${eur(p.allowance.balance)}</b></div>` : ""}
+        <div><span>Documenti e visite</span><b>${p.items.length}</b></div></div>
+      ${warn.map(i => `<div style="margin-top:6px"><span class="badge ${i.level === "30" ? "wait" : "late"}">${esc(i.name)}: ${i.days < 0 ? "scaduto" : i.days === 0 ? "oggi" : "tra " + i.days + " gg"}</span></div>`).join("")}
+    </div>`;
+  }).join("") + (canEdit() ? `<button class="scan" id="addp">+ Aggiungi una persona</button>` : "");
+  $$(".person-w").forEach(el => el.onclick = () => openPersonDetail(el.dataset.p));
+  if ($("#addp")) $("#addp").onclick = () => openPersonW();
+}
+
+function openPersonW(p) {
+  p = p || { role: "adulto" };
+  openSheet(p.id ? "Modifica persona" : "Nuova persona", `
+    <label class="f"><span>Nome</span><input type="text" id="pn" value="${esc(p.name)}" autocomplete="off"></label>
+    <div class="seg" id="pr" style="margin-bottom:14px"><button data-r="adulto">Adulto</button><button data-r="figlio">Figlio/a</button></div>
+    <label class="f"><span>Anno di nascita (facoltativo)</span><input type="text" inputmode="numeric" id="pb" value="${esc(p.birth_year || "")}"></label>
+    <label class="f"><span>Colore</span></label><div class="chips" id="pc">${PEOPLE_PALETTE.map(c => `<button data-c="${c}" class="${c === p.color ? "on" : ""}"><span class="dot" style="background:${c};width:16px;height:16px"></span></button>`).join("")}</div>
+    <label class="f"><span>Note</span><input type="text" id="pno" value="${esc(p.notes)}"></label>
+    <p class="hint">Non serve salvare numeri di documento o codice fiscale: bastano tipo e scadenza.</p>`,
+    () => { savePerson({ id: p.id, name: $("#pn").value, role: role, birth_year: $("#pb").value, color: color, notes: $("#pno").value }); return p.id ? "Salvato" : "Persona aggiunta"; },
+    p.id ? { del: { label: "Elimina persona", confirm: `Eliminare ${p.name}? Documenti, visite e paghetta vengono cancellati; le spese restano ma senza persona.`, run: () => { deletePerson(p.id); return "Eliminata"; } } } : {});
+  let role = p.role, color = p.color;
+  const setR = r => { role = r; $$("#pr button").forEach(b => b.classList.toggle("on", b.dataset.r === r)); };
+  $$("#pr button").forEach(b => b.onclick = () => setR(b.dataset.r)); setR(role);
+  $$("#pc button").forEach(b => b.onclick = () => { color = b.dataset.c; $$("#pc button").forEach(x => x.classList.toggle("on", x === b)); });
+  if (!p.id) setTimeout(() => $("#pn").focus(), 250);
+}
+
+function openPersonDetail(id) {
+  const y = new Date().getFullYear();
+  const p = peopleView(y).people.find(x => x.id === id); if (!p) return;
+  const { sheet, close } = openSheet(p.name, `
+    <div class="card"><div class="card-hw"><h2>Documenti e visite</h2></div>
+      ${p.items.length ? p.items.map(i => `<div class="row it" data-i="${i.id}"><span class="n">${esc(i.name)}<br>
+        <span class="muted" style="font-size:12px">${i.kind === "visita" ? "Visita" : "Documento"}${i.due_date ? " · " + longDateW(i.due_date) : ""}${i.repeat_months ? " · ogni " + i.repeat_months + " mesi" : ""}</span></span>
+        ${i.due_date ? dueBadgeW({ days: i.days ?? daysTo(i.due_date), level: i.level, due: i.due_date }) : ""}</div>`).join("") : `<p class="muted">Ancora niente.</p>`}
+      ${canEdit() ? `<div style="display:flex;gap:8px;margin-top:10px"><button class="btn" id="ad">+ Documento</button><button class="btn" id="av">+ Visita</button></div>` : ""}</div>
+    ${p.allowance ? `<div class="card"><h2>Paghetta</h2>
+      <div class="pw-stats"><div><span>Saldo</span><b class="num">${eur(p.allowance.balance)}</b></div><div><span>Ricevuti ${y}</span><b class="num in">${eur(p.allowance.received)}</b></div><div><span>Spesi ${y}</span><b class="num out">${eur(p.allowance.spent)}</b></div></div>
+      ${canEdit() ? `<div style="display:flex;gap:8px;margin:10px 0"><button class="btn" data-al="0">+ Ricevuti</button><button class="btn" data-al="1">− Spesi</button></div>` : ""}
+      ${p.allowance.entries.slice(0, 15).map(e => `<div class="row"><span class="muted num" style="width:50px">${shortDate(e.occurred_on)}</span><span class="n">${esc(e.note || (e.amount > 0 ? "Paghetta" : "Spesa"))}</span>
+        <b class="num ${e.amount > 0 ? "in" : "out"}">${e.amount > 0 ? "+" : "−"}${eur(Math.abs(e.amount))}</b>${canEdit() ? `<button class="btn link" data-ad="${e.id}" aria-label="Elimina" style="margin-left:8px">✕</button>` : ""}</div>`).join("")}</div>` : ""}
+    <div class="card"><h2>Spese ${y}: ${eur(p.year_total)}</h2>
+      ${p.by_category.length ? p.by_category.slice(0, 8).map(([c, v]) => `<div class="row"><span class="n">${esc(c)}</span><b class="num">${eur(v)}</b></div>`).join("")
+        : `<p class="hint">Nessuna spesa collegata. Quando inserisci una spesa scegli «Per chi»: la prossima volta che compare la stessa descrizione viene collegata da sola.</p>`}
+      ${Object.keys(p.deductions).length ? `<p class="hint" style="margin-top:10px">Per il 730: ${Object.entries(p.deductions).map(([k, v]) => `${esc(k)} ${eur(v)}`).join(", ")}</p>` : ""}
+      ${p.transactions.length ? `<div class="list" style="margin-top:8px">${p.transactions.slice(0, 20).map(txRow).join("")}</div>` : ""}</div>
+    ${canEdit() ? `<button class="btn wide" id="pe-ed">Modifica ${esc(p.name)}</button>` : ""}`);
+  const reopen = () => { sheet.remove(); openPersonDetail(id); };
+  if ($("#ad", sheet)) $("#ad", sheet).onclick = () => { sheet.remove(); openItemW({ kind: "documento", person_id: id }); };
+  if ($("#av", sheet)) $("#av", sheet).onclick = () => { sheet.remove(); openItemW({ kind: "visita", person_id: id }); };
+  $$(".it", sheet).forEach(el => el.onclick = () => { sheet.remove(); openItemW(DB.t.person_items[el.dataset.i]); });
+  $$("[data-al]", sheet).forEach(b => b.onclick = () => { sheet.remove(); openAllowanceW(p, b.dataset.al === "1"); });
+  $$("[data-ad]", sheet).forEach(b => b.onclick = e => { e.stopPropagation(); if (confirm("Eliminare questo movimento della paghetta?")) { deleteAllowance(b.dataset.ad); reopen(); } });
+  $$(".tx", sheet).forEach(el => el.onclick = () => { sheet.remove(); document.body.style.overflow = ""; openTx(DB.t.transactions[el.dataset.id]); });
+  if ($("#pe-ed", sheet)) $("#pe-ed", sheet).onclick = () => { sheet.remove(); openPersonW(DB.t.people[id]); };
+}
+
+function openItemW(it) {
+  const visit = it.kind === "visita", sugg = visit ? VISIT_SUGGEST : DOC_SUGGEST;
+  const p = personById(it.person_id);
+  const s = openSheet(`${it.id ? "" : visit ? "Nuova visita" : "Nuovo documento"}${it.id ? it.name : ""}${p ? " · " + p.name : ""}`, `
+    ${!it.id ? `<div class="chips" id="isg">${sugg.map(n => `<button data-n="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
+    <label class="f"><span>Nome</span><input type="text" id="in" value="${esc(it.name)}" autocomplete="off"></label>
+    <label class="f"><span>${visit ? "Prossima visita" : "Scadenza"}</span><input type="date" id="id" value="${esc(it.due_date || "")}"></label>
+    <label class="f"><span>Si ripete ogni (mesi, facoltativo)</span><input type="text" inputmode="numeric" id="ir" value="${esc(it.repeat_months || "")}" placeholder="${visit ? "es. 6 o 12" : "es. 120 per la carta d'identità"}"></label>
+    <label class="f"><span>Note</span><input type="text" id="ino" value="${esc(it.notes)}"></label>
+    <p class="hint">Promemoria a 30 e 15 giorni e alla scadenza, nel Riepilogo e sul Mac.</p>
+    ${it.id && canEdit() ? `<button class="btn wide" id="iren" style="margin-top:6px">${visit ? "Visita fatta: fissa la prossima" : "Rinnovato: nuova scadenza"}</button>` : ""}`,
+    () => { savePersonItem({ id: it.id, person_id: it.person_id, kind: it.kind, name: $("#in").value, due_date: $("#id").value, repeat_months: $("#ir").value, notes: $("#ino").value }); return "Salvato"; },
+    it.id ? { del: { label: "Elimina", confirm: `Eliminare «${it.name}»?`, run: () => { deletePersonItem(it.id); return "Eliminato"; } } } : {});
+  $$("#isg button").forEach(b => b.onclick = () => { $("#in").value = b.dataset.n; $$("#isg button").forEach(x => x.classList.toggle("on", x === b)); });
+  if ($("#iren")) $("#iren").onclick = () => {
+    const auto = it.repeat_months ? addMonthsIso(todayIso(), it.repeat_months) : "";
+    const v = prompt(`Nuova data (aaaa-mm-gg)${auto ? ", proposta tra " + it.repeat_months + " mesi" : ""}`, auto || $("#id").value);
+    if (!v) return;
+    s.run(() => { const nd = renewPersonItem(it.id, /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null); return "Nuova scadenza: " + longDateW(nd); });
+  };
+}
+
+function openAllowanceW(p, spent) {
+  openSheet(spent ? `Spesa di ${p.name}` : `Paghetta a ${p.name}`, `
+    <input class="amount num" id="aa" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Importo in euro"><div class="amount-line">euro</div>
+    <label class="f"><span>Nota (facoltativa)</span><input type="text" id="an" placeholder="${spent ? "es. figurine, gelato" : "es. paghetta settimanale, regalo nonni"}"></label>`,
+    () => { addAllowance(p.id, $("#aa").value, $("#an").value, spent); return "Registrato"; });
+  setTimeout(() => $("#aa").focus(), 250);
+}
+
+function famScadenze() {
+  const dl = familyDeadlines(), ppl = people();
+  $("#fbody").innerHTML = `<div class="card"><h2>Documenti, visite, ISEE e 730</h2>
+      ${dl.length ? dl.map(x => `<div class="row fdl" data-id="${x.id}" data-k="${x.kind}"><span class="muted num" style="width:50px">${shortDate(x.due)}</span>
+        <span class="n">${esc(x.label)}<br><span class="muted" style="font-size:12px">${esc(x.person)}${x.due.slice(0, 4) !== todayIso().slice(0, 4) ? " · " + x.due.slice(0, 4) : ""}</span></span>${dueBadgeW(x)}</div>`).join("")
+        : `<p class="muted">Nessuna scadenza: aggiungi documenti e visite qui sotto.</p>`}</div>
+    ${canEdit() ? `<div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn" data-new="documento">+ Documento</button><button class="btn" data-new="visita">+ Visita</button></div>` : ""}`;
+  $$(".fdl").forEach(el => el.onclick = () => ["isee", "730"].includes(el.dataset.k) ? openYearlyW(DB.t.yearly_docs[el.dataset.id]) : openItemW(DB.t.person_items[el.dataset.id]));
+  $$("[data-new]").forEach(b => b.onclick = () => {
+    if (ppl.length === 1) return openItemW({ kind: b.dataset.new, person_id: ppl[0].id });
+    const s = openSheet("Per chi?", `<div class="chips">${ppl.map(p => `<button data-p="${p.id}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</button>`).join("")}</div>`);
+    $$("[data-p]", s.sheet).forEach(x => x.onclick = () => { s.sheet.remove(); openItemW({ kind: b.dataset.new, person_id: x.dataset.p }); });
+  });
+}
+
+function famFisco() {
+  S.famYear = S.famYear || new Date().getFullYear() - 1;
+  const v = peopleView(S.famYear), ppl = people();
+  const years = [0, 1, 2].map(i => new Date().getFullYear() - i);
+  const per = t => v.people.map(p => [p, p.deductions[t]]).filter(([, x]) => x);
+  $("#fbody").innerHTML = `
+    <div class="card"><h2>ISEE e 730</h2>
+      ${v.yearly_docs.length ? v.yearly_docs.map(d => `<div class="row yd-w" data-id="${d.id}"><span class="n"><b>${d.kind === "isee" ? "ISEE" : "730"} ${d.year}</b><br>
+        <span class="muted" style="font-size:12px">${d.status === "fatto" ? (d.done_date ? "fatto il " + longDateW(d.done_date) : "fatto") : d.due_date ? "entro il " + longDateW(d.due_date) : ""}${d.office ? " · " + esc(d.office) : ""}
+        ${d.amount != null ? " · " + (d.kind === "isee" ? "valore " + eur(d.amount) : d.amount >= 0 ? "rimborso " + eur(d.amount) : "da pagare " + eur(-d.amount)) : ""}</span></span>
+        <span class="badge ${YD_STATE[d.status]}">${d.status}</span></div>`).join("") : `<p class="hint">Segna qui ogni anno ISEE e 730: stato, scadenza, CAF e risultato. Così li ritrovi anno dopo anno.</p>`}
+      ${canEdit() ? `<div style="display:flex;gap:8px;margin-top:10px"><button class="btn" data-yd="isee">+ ISEE</button><button class="btn" data-yd="730">+ 730</button></div>` : ""}</div>
+    <div class="card"><h2>Spese utili per il 730</h2>
+      <div class="seg" id="fy" style="margin-bottom:12px">${years.map(y => `<button data-y="${y}" class="${y === S.famYear ? "on" : ""}">${y}</button>`).join("")}</div>
+      ${v.deduct_types.map(t => `<div class="row" style="align-items:flex-start"><span class="n">${esc(t)}${per(t).length ? `<br><span class="muted" style="font-size:12px">${per(t).map(([p, x]) => `${esc(p.name)} ${eur(x)}`).join(" · ")}</span>` : ""}</span>
+        <b class="num">${eur(v.deduct_totals[t] || 0)}</b></div>`).join("")}
+      <p class="hint" style="margin-top:8px">Indicativo: riconosciute dalla descrizione e dalla categoria. Controlla con il CAF cosa è detraibile.</p>
+      <button class="btn" id="x730">Scarica l'elenco (CSV)</button></div>
+    ${v.deduct_unassigned.length && ppl.length ? `<div class="card"><h2>Da attribuire (${v.deduct_unassigned.length})</h2>
+      <p class="hint">Per chi era la spesa? La prossima volta con la stessa descrizione lo faccio da solo.</p>
+      ${v.deduct_unassigned.slice(0, 25).map(t => `<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+        <div class="row" style="padding:0;border:0"><span class="muted num" style="width:50px">${shortDate(t.occurred_on)}</span><span class="n">${esc(t.description || catLabel(t.category_id) || "Spesa")}<br>
+          <span class="muted" style="font-size:12px">${esc(t.deduct)}</span></span><b class="num">${eur(t.amount)}</b></div>
+        ${canEdit() ? `<div class="chips mini" style="margin:8px 0 0">${ppl.map(p => `<button data-as="${t.id}" data-p="${p.id}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</button>`).join("")}
+          ${ppl.filter(p => p.role === "figlio").length > 1 ? `<button data-as="${t.id}" data-p="${ppl.filter(p => p.role === "figlio").map(p => p.id).join(",")}">Tutti i figli</button>` : ""}</div>` : ""}</div>`).join("")}</div>` : ""}`;
+  $$("#fy button").forEach(b => b.onclick = () => { S.famYear = +b.dataset.y; famFisco(); });
+  $$(".yd-w").forEach(el => el.onclick = () => openYearlyW(DB.t.yearly_docs[el.dataset.id]));
+  $$("[data-yd]").forEach(b => b.onclick = () => openYearlyW({ kind: b.dataset.yd }));
+  $$("[data-as]").forEach(b => b.onclick = () => { const n = setTxPerson(b.dataset.as, b.dataset.p); toast(n > 1 ? `Attribuite ${n} spese uguali` : "Attribuita"); famFisco(); });
+  $("#x730").onclick = async () => {
+    const r = export730Csv(S.famYear);
+    if (!r.count) return toast("Nessuna spesa utile nel " + S.famYear);
+    const name = `spese_730_${S.famYear}.csv`, blob = new Blob([r.text], { type: "text/csv" });
+    try {
+      const f = new File([blob], name, { type: "text/csv" });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) return await navigator.share({ files: [f], title: name });
+    } catch (e) { if (e.name === "AbortError") return; }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  };
+}
+
+function openYearlyW(d) {
+  const isee = d.kind === "isee", nowY = new Date().getFullYear();
+  const year = d.year || (isee ? nowY + (new Date().getMonth() >= 9 ? 1 : 0) : nowY + (new Date().getMonth() >= 9 ? 1 : 0));
+  const amt = d.amount == null ? "" : amountText(Math.abs(Number(d.amount)));
+  openSheet(`${isee ? "ISEE" : "730"}${d.id ? " " + d.year : ""}`, `
+    <label class="f"><span>${isee ? "Anno di validità" : "Anno di presentazione"}</span><input type="text" inputmode="numeric" id="yy" value="${year}" ${d.id ? "disabled" : ""}></label>
+    ${!isee ? `<p class="hint" id="yh">Il 730 ${year} riguarda le spese del ${year - 1}.</p>` : ""}
+    <label class="f"><span>Stato</span></label><div class="seg" id="yst" style="margin-bottom:14px">${["da fare", "in corso", "fatto"].map(s => `<button data-s="${s}">${s}</button>`).join("")}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <label class="f"><span>Scadenza</span><input type="date" id="ydue" value="${esc(d.due_date || "")}"></label>
+      <label class="f"><span>Fatto il</span><input type="date" id="ydone" value="${esc(d.done_date || "")}"></label></div>
+    ${!d.id ? `<p class="hint">Se lasci vuota la scadenza propongo ${isee ? "il 31 gennaio" : "il 30 settembre"}: controlla ogni anno la data giusta.</p>` : ""}
+    ${isee ? `<label class="f"><span>Valore ISEE (facoltativo)</span><input type="text" inputmode="decimal" id="ya" value="${esc(amt)}"></label>`
+      : `<label class="f"><span>Risultato (facoltativo)</span></label><div class="seg" id="ydb" style="margin-bottom:8px"><button data-d="0">Rimborso</button><button data-d="1">Da pagare</button></div>
+        <label class="f"><input type="text" inputmode="decimal" id="ya" value="${esc(amt)}" placeholder="0,00"></label>`}
+    <label class="f"><span>CAF, patronato o commercialista</span><input type="text" id="yo" value="${esc(d.office)}"></label>
+    <label class="f"><span>Note</span><input type="text" id="yn" value="${esc(d.notes)}"></label>`,
+    async () => { await saveYearlyDoc({ id: d.id, kind: d.kind, year: $("#yy").value, status: st, due_date: $("#ydue").value, done_date: $("#ydone").value,
+      amount: $("#ya").value, debt: debt, office: $("#yo").value, notes: $("#yn").value }); return "Salvato"; },
+    d.id ? { del: { label: "Elimina", confirm: `Eliminare ${isee ? "l'ISEE" : "il 730"} ${d.year}?`, run: () => { deleteYearlyDoc(d.id); return "Eliminato"; } } } : {});
+  let st = d.status || "da fare", debt = d.amount != null && Number(d.amount) < 0;
+  const setS = s => { st = s; $$("#yst button").forEach(b => b.classList.toggle("on", b.dataset.s === s)); if (s === "fatto" && !$("#ydone").value) $("#ydone").value = todayIso(); };
+  $$("#yst button").forEach(b => b.onclick = () => setS(b.dataset.s)); setS(st);
+  const setD = v => { debt = v; $$("#ydb button").forEach(b => b.classList.toggle("on", (b.dataset.d === "1") === v)); };
+  $$("#ydb button").forEach(b => b.onclick = () => setD(b.dataset.d === "1")); setD(debt);
+  if ($("#yh")) $("#yy").oninput = () => { const y = +$("#yy").value; if (y > 1999) $("#yh").textContent = `Il 730 ${y} riguarda le spese del ${y - 1}.`; };
+}
+
+/* ---------- vacanze ---------- */
+const TRIP_STATE_W = { "in corso": ["In corso", "ok"], "in programma": ["Confermata", "ok"], "bozza": ["Da decidere", "wait"], "conclusa": ["Conclusa", ""], "annullata": ["Annullata", ""] };
+function tripDatesW(t) {
+  if (!t.start_date) return "Date da decidere";
+  const a = t.start_date, b = t.end_date || a, same = a.slice(0, 4) === b.slice(0, 4);
+  return `${shortDate(a)}${same ? "" : " " + a.slice(0, 4)} – ${shortDate(b)} ${b.slice(0, 4)}${t.nights != null ? ` · ${t.nights} ${t.nights === 1 ? "notte" : "notti"}` : ""}`;
+}
+function famVacanze() {
+  const list = tripsView(), dl = tripDeadlines().filter(d => d.level);
+  $("#fbody").innerHTML = `
+    ${dl.map(d => `<div class="card alert ${d.level === "30" ? "wait" : "late"}"><b>${esc(d.label)}</b> per ${esc(d.trip)}: entro il ${shortDate(d.due)}${d.days > 0 ? `, tra ${d.days} gg` : ""}</div>`).join("")}
+    ${list.map(t => { const st = TRIP_STATE_W[t.state], ref = t.budget || t.planned, todo = t.items.filter(i => !i.booked).length;
+      return `<div class="card trip-w ${["conclusa", "annullata"].includes(t.state) ? "past" : ""}" data-trip="${t.id}" style="border-top:5px solid ${t.color || "var(--accent)"}">
+        <div class="row" style="padding:0;border:0"><span class="n"><span class="badge ${st[1]}">${st[0]}</span>${t.countdown != null ? ` <span class="muted" style="font-size:12px">tra ${t.countdown} gg</span>` : ""}</span><span class="muted">›</span></div>
+        <h2 style="margin:8px 0 2px">${esc(t.name)}</h2><div class="muted" style="font-size:13px">${t.destination ? esc(t.destination) + " · " : ""}${tripDatesW(t)}</div>
+        ${ref ? `<div class="bar" style="margin:10px 0 4px"><div class="${t.spent > ref ? "over" : ""}" style="width:${Math.min(100, t.spent / ref * 100)}%;${t.spent > ref ? "" : `background:${t.color}`}"></div></div>
+          <div class="muted" style="font-size:12px">${eur(t.spent)} di ${eur(ref)} ${t.budget ? "di budget" : "previsti"}</div>` : `<div class="muted" style="font-size:13px;margin-top:6px">${eur(t.spent)} spesi</div>`}
+        ${todo && !["conclusa", "annullata"].includes(t.state) ? `<div class="muted" style="font-size:12px;margin-top:4px">${todo} ${todo === 1 ? "voce" : "voci"} da prenotare</div>` : ""}</div>`; }).join("")}
+    ${!list.length ? `<div class="card"><h2>Pianifica una vacanza</h2><p class="hint">Ogni vacanza ha la sua scheda con date, budget e voci da prenotare. Quando la confermi,
+      le spese fatte tra l'inizio e la fine entrano qui da sole, senza sparire dalle altre sezioni. Le schede restano nello storico.</p></div>` : ""}
+    ${canEdit() ? `<button class="scan" id="addtrip">+ Nuova vacanza</button>` : ""}`;
+  $$(".trip-w").forEach(el => el.onclick = () => openTripDetail(el.dataset.trip));
+  if ($("#addtrip")) $("#addtrip").onclick = () => openTripW();
+}
+function openTripW(t) {
+  t = t || { status: "bozza" };
+  const s = openSheet(t.id ? "Modifica vacanza" : "Nuova vacanza", `
+    <label class="f"><span>Nome</span><input type="text" id="tn" value="${esc(t.name)}" placeholder="Es. Sardegna 2027" autocomplete="off"></label>
+    <label class="f"><span>Destinazione (facoltativa)</span><input type="text" id="td" value="${esc(t.destination)}" autocomplete="off"></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="f"><span>Partenza</span><input type="date" id="ts" value="${esc(t.start_date || "")}"></label>
+      <label class="f"><span>Rientro</span><input type="date" id="te" value="${esc(t.end_date || "")}"></label></div>
+    <label class="f"><span>Budget (facoltativo)</span><input type="text" inputmode="decimal" id="tb" value="${t.budget == null ? "" : esc(amountText(t.budget))}" placeholder="0,00"></label>
+    <label class="f"><span>Stato</span></label><div class="seg" id="tst" style="margin-bottom:14px"><button data-s="bozza">Da decidere</button><button data-s="confermata">Confermata</button><button data-s="annullata">Annullata</button></div>
+    <label class="f"><span>Note</span><input type="text" id="tno" value="${esc(t.notes)}"></label>
+    <p class="hint">Confermata: le spese tra partenza e rientro entrano qui da sole (tranne bollette, mutuo, abbonamenti e ricorrenti) e restano visibili anche nel resto dell'app.</p>`,
+    () => { const r = saveTrip({ id: t.id, name: $("#tn").value, destination: $("#td").value, start_date: $("#ts").value, end_date: $("#te").value,
+      budget: $("#tb").value, status: st, notes: $("#tno").value }); return st === "confermata" && r.count ? `Salvata: ${r.count} spese collegate` : "Salvata"; },
+    t.id ? { del: { label: "Elimina vacanza", confirm: `Eliminare «${t.name}»? Le spese restano nei movimenti.`, run: () => { deleteTrip(t.id); return "Eliminata"; } } } : {});
+  let st = t.status;
+  const setS = v => { st = v; $$("#tst button").forEach(b => b.classList.toggle("on", b.dataset.s === v)); };
+  $$("#tst button").forEach(b => b.onclick = () => setS(b.dataset.s)); setS(st);
+  $("#ts").onchange = () => { if (!$("#te").value || $("#te").value < $("#ts").value) $("#te").value = $("#ts").value; };
+  if (!t.id) setTimeout(() => $("#tn").focus(), 250);
+  return s;
+}
+function openTripDetail(id) {
+  const t = tripsView().find(x => x.id === id); if (!t) return;
+  const st = TRIP_STATE_W[t.state], ref = t.budget || t.planned, maxC = Math.max(1, ...t.by_category.map(c => c.amount));
+  const { sheet } = openSheet(t.name, `
+    <div class="card" style="border-left:5px solid ${t.color}"><span class="badge ${st[1]}">${st[0]}</span>${t.countdown != null ? ` <span class="muted" style="font-size:13px">si parte tra ${t.countdown} gg</span>` : ""}
+      <div class="muted" style="font-size:13px;margin-top:6px">${t.destination ? esc(t.destination) + " · " : ""}${tripDatesW(t)}</div>
+      <div class="pw-stats" style="flex-wrap:wrap"><div><span>Speso</span><b class="num ${ref && t.spent > ref ? "out" : ""}">${eur(t.spent)}</b></div>
+        ${t.budget ? `<div><span>Budget</span><b class="num">${eur(t.budget)}</b></div><div><span>${t.spent <= t.budget ? "Restano" : "Oltre"}</span><b class="num ${t.spent > t.budget ? "out" : "in"}">${eur(Math.abs(t.budget - t.spent))}</b></div>` : ""}
+        ${t.per_day ? `<div><span>Al giorno</span><b class="num">${eur(t.per_day)}</b></div>` : ""}</div>
+      ${t.status === "bozza" && canEdit() ? `<button class="btn primary wide" id="tok" style="margin-top:12px">Conferma la vacanza</button>` : ""}</div>
+    <div class="card"><h2>Da prenotare e previste</h2>
+      ${t.items.length ? t.items.map(i => `<div class="row"><input type="checkbox" data-tog="${i.id}" ${i.booked ? "checked" : ""} ${canEdit() ? "" : "disabled"} style="width:22px;height:22px;margin:0 10px 0 0;accent-color:var(--accent)">
+        <span class="n ti-w" data-ti="${i.id}" style="${i.booked ? "color:var(--muted)" : ""}">${esc(i.name)}${i.due_date && !i.booked ? `<br><span class="muted" style="font-size:12px">entro il ${shortDate(i.due_date)}</span>` : ""}</span>
+        <b class="num">${i.amount != null ? eur(i.amount) : ""}</b></div>`).join("") + `<p class="hint" style="margin-top:8px">Prenotato ${eur(t.booked_total)} di ${eur(t.planned)}</p>`
+        : `<p class="hint">Volo, alloggio, noleggio, attività: con una data «entro il» ti avviso a 30 e 15 giorni.</p>`}
+      ${canEdit() ? `<button class="btn" id="tadd" style="margin-top:6px">+ Voce</button>` : ""}</div>
+    ${t.by_category.length ? `<div class="card"><h2>Dove vanno i soldi</h2>${t.by_category.map(c => `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px">
+      <span><span class="dot" style="background:${c.color}"></span> ${esc(c.name)}</span><b class="num">${eur(c.amount)}</b></div>
+      <div class="bar"><div style="width:${c.amount / maxC * 100}%;background:${c.color}"></div></div></div>`).join("")}
+      ${t.spent_before ? `<p class="hint">Di cui ${eur(t.spent_before)} pagati prima della partenza.</p>` : ""}</div>` : ""}
+    ${t.candidates.length && canEdit() ? `<div class="card"><h2>Pagate prima di partire?</h2><p class="hint">Sembrano spese di viaggio dei mesi prima: aggiungi quelle di questa vacanza.</p>
+      ${t.candidates.map(x => `<div class="row"><span class="muted num" style="width:50px">${shortDate(x.occurred_on)}</span><span class="n">${esc(x.description || "Spesa")}</span>
+        <b class="num">${eur(x.amount)}</b><button class="btn" data-inc="${x.id}" style="margin-left:8px;padding:6px 12px">+</button></div>`).join("")}</div>` : ""}
+    <div class="card"><h2>Spese della vacanza${t.transactions.length ? ` (${t.transactions.length})` : ""}</h2>
+      ${t.transactions.length ? t.transactions.slice().reverse().map(x => `<div class="row"><span class="muted num" style="width:50px">${shortDate(x.occurred_on)}</span>
+        <span class="n">${esc(x.description || catLabel(x.category_id) || "Spesa")}</span><b class="num">${eur(x.amount)}</b>
+        ${canEdit() ? `<button class="btn link" data-out="${x.id}" style="margin-left:10px">Togli</button>` : ""}</div>`).join("")
+        : `<p class="hint">${t.status === "bozza" ? "Compariranno quando la vacanza sarà confermata." : "Le spese tra partenza e rientro compariranno qui da sole."}</p>`}
+      ${t.excluded_count ? `<p class="hint" style="margin-top:8px">${t.excluded_count} ${t.excluded_count === 1 ? "spesa tolta" : "spese tolte"}: per rimetterle apri il movimento e scegli la vacanza.</p>` : ""}</div>
+    ${canEdit() ? `<button class="btn wide" id="tedit">Modifica vacanza</button>` : ""}`);
+  const reopen = msg => { sheet.remove(); if (msg) toast(msg); openTripDetail(id); };
+  if ($("#tok", sheet)) $("#tok", sheet).onclick = () => {
+    try { const r = saveTrip(Object.assign({}, DB.t.trips[id], { status: "confermata" })); reopen(r.count ? `Confermata: ${r.count} spese collegate` : "Confermata"); }
+    catch (e) { toast(e.message); }
+  };
+  $$("[data-tog]", sheet).forEach(c => c.onchange = () => { toggleTripItem(c.dataset.tog); reopen(); });
+  $$("[data-ti]", sheet).forEach(el => el.onclick = () => { if (!canEdit()) return; sheet.remove(); openTripItemW(DB.t.trip_items[el.dataset.ti]); });
+  if ($("#tadd", sheet)) $("#tadd", sheet).onclick = () => { sheet.remove(); openTripItemW({ trip_id: id, kind: "trasporto" }); };
+  $$("[data-inc]", sheet).forEach(b => b.onclick = () => { setTxTrip(b.dataset.inc, id); reopen("Aggiunta alla vacanza"); });
+  $$("[data-out]", sheet).forEach(b => b.onclick = () => { setTxTrip(b.dataset.out, null); reopen("Tolta dalla vacanza (resta nei movimenti)"); });
+  if ($("#tedit", sheet)) $("#tedit", sheet).onclick = () => { sheet.remove(); openTripW(DB.t.trips[id]); };
+}
+function openTripItemW(it) {
+  const t = DB.t.trips[it.trip_id];
+  openSheet(`${it.id ? it.name : "Nuova voce"} · ${t ? t.name : ""}`, `
+    <div class="seg" id="tik" style="margin-bottom:14px">${Object.entries(TRIP_KINDS).map(([k, l]) => `<button data-k="${k}">${l}</button>`).join("")}</div>
+    <label class="f"><span>Voce</span><input type="text" id="tin" value="${esc(it.name)}" placeholder="Es. Volo, Hotel, Noleggio auto" autocomplete="off"></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="f"><span>Costo previsto</span><input type="text" inputmode="decimal" id="tia" value="${it.amount == null ? "" : esc(amountText(it.amount))}" placeholder="0,00"></label>
+      <label class="f"><span>Prenotare entro</span><input type="date" id="tid" value="${esc(it.due_date || "")}"></label></div>
+    <label style="display:flex;gap:10px;align-items:center;margin:4px 0 14px"><input type="checkbox" id="tib" ${it.booked ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--accent)"> Già prenotato o pagato</label>
+    <label class="f"><span>Note</span><input type="text" id="tino" value="${esc(it.notes)}"></label>`,
+    () => { saveTripItem({ id: it.id, trip_id: it.trip_id, kind: kind, name: $("#tin").value, amount: $("#tia").value, due_date: $("#tid").value, booked: $("#tib").checked, notes: $("#tino").value });
+      setTimeout(() => openTripDetail(it.trip_id), 0); return "Salvata"; },
+    it.id ? { del: { label: "Elimina voce", confirm: `Eliminare «${it.name}»?`, run: () => { deleteTripItem(it.id); setTimeout(() => openTripDetail(it.trip_id), 0); return "Eliminata"; } } } : {});
+  let kind = it.kind || "altro";
+  const setK = v => { kind = v; $$("#tik button").forEach(b => b.classList.toggle("on", b.dataset.k === v)); };
+  $$("#tik button").forEach(b => b.onclick = () => setK(b.dataset.k)); setK(kind);
+}
+
+/* ==========================================================================
+   Altro
+   ========================================================================== */
+/* nome nel saluto: quello scritto in «Come ti saluto» (app_settings greet_<id>, uguale sul Mac),
+   altrimenti un nome comune trovato nel nome utente o nell'email (es. guizzo.alberto@… → Alberto) */
+const GREET_NAMES = new Set(["achille", "adriana", "adriano", "agnese", "alba", "alberto", "aldo", "alessandra", "alessandro", "alessia", "alessio", "alfredo", "alice", "amedeo", "andrea", "angela", "angelo", "anna", "annalisa", "antonella", "antonio", "arianna", "armando", "arturo", "attilio", "augusto", "aurora", "barbara", "beatrice", "benedetta", "benito", "bianca", "bruno", "camilla", "camillo", "carla", "carlo", "carlotta", "carmela", "caterina", "cesare", "chiara", "christian", "cinzia", "claudia", "claudio", "concetta", "cosimo", "cristian", "cristina", "damiano", "daniela", "daniele", "dario", "davide", "debora", "deborah", "denis", "diana", "diego", "dino", "domenico", "edoardo", "elena", "eleonora", "elia", "elio", "elisa", "elisabetta", "emanuela", "emanuele", "emilio", "emma", "enrico", "enzo", "erica", "erika", "ettore", "ezio", "fabio", "fabiola", "fabrizio", "fausto", "federica", "federico", "fernando", "filiberto", "filippo", "flavio", "franca", "francesca", "francesco", "franco", "gabriel", "gabriele", "gaetano", "gaia", "gerardo", "germano", "giacomo", "giada", "giancarlo", "gianfranco", "gianluca", "gianni", "gilberto", "ginevra", "gino", "giordano", "giorgia", "giorgio", "giovanna", "giovanni", "giulia", "giulio", "giuseppe", "giuseppina", "graziano", "greta", "guido", "igor", "ilaria", "irene", "isabella", "italo", "ivan", "ivano", "jacopo", "jessica", "katia", "lamberto", "laura", "leonardo", "leone", "linda", "lino", "lisa", "livio", "loredana", "lorena", "lorenzo", "luca", "lucia", "luciano", "lucio", "ludovica", "luigi", "luisa", "manuel", "manuela", "marcello", "marco", "margherita", "maria", "mariangela", "mariano", "marina", "marino", "mario", "marta", "martina", "martino", "massimo", "matilde", "matteo", "mattia", "maurizio", "mauro", "michael", "michela", "michele", "michelle", "miriam", "mirko", "monica", "nadia", "nazzareno", "nello", "nevio", "niccol\u00f2", "nicola", "nicole", "nicol\u00f2", "noemi", "omar", "orlando", "ornella", "oscar", "osvaldo", "ottavio", "paola", "paolo", "patrick", "patrizia", "pierluigi", "piero", "pierpaolo", "pietro", "raffaele", "raffaella", "raimondo", "rebecca", "remo", "renato", "renzo", "riccardo", "rinaldo", "rita", "roberta", "roberto", "rocco", "rodolfo", "romano", "rosa", "rudy", "ruggero", "sabrina", "salvatore", "samuel", "samuele", "sandro", "sara", "sebastiano", "serena", "sergio", "silvia", "silvio", "simona", "simone", "sofia", "stefania", "stefano", "susanna", "teodoro", "teresa", "thomas", "tiberio", "tiziana", "tiziano", "tommaso", "tullio", "ugo", "umberto", "valentina", "valerio", "valter", "vasco", "veronica", "vincenzo", "viola", "vito", "vittoria", "vittorio", "walter", "yuri", "zeno"]);
+function greetName() {
+  const r = DB.t.app_settings[DB.hh + "|greet_" + uid()];
+  if (r && (r.value || "").trim()) return r.value.trim();
+  const disp = DB.members[uid()] || "", mail = (DB.email || "").split("@")[0];
+  const tok = (disp + " " + mail).split(/[^A-Za-zÀ-ÿ]+/).filter(Boolean);
+  const hit = tok.find(t => GREET_NAMES.has(t.toLowerCase()));
+  const w = hit || (disp || mail).trim().split(/[\s@._-]+/)[0] || "";
+  return w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : "";
+}
+function viewAltro() {
+  const set = Object.fromEntries(rows("app_settings").map(r => [r.key, r.value]));
+  $("#view").innerHTML = `
+    <div class="card"><h2>${esc(DB.members[uid()] || DB.email)}</h2>
+      <p class="hint">${esc(DB.email)}, famiglia ${esc(DB.hhName)}, ${({ owner: "amministratore", member: "membro", viewer: "sola lettura" })[DB.role] || ""}</p>
+      ${canEdit() ? `<label class="f"><span>Come ti saluto nel Riepilogo</span><input type="text" id="gr-n" maxlength="40" value="${esc(greetName())}"></label>
+        <button class="btn" id="gr-save">Salva il nome</button>` : ""}</div>
+    ${fundAccount() && kmMine() ? (() => { const f = fundAccount(), m = thisMonth(), av = fundAvailable();
+      let amt = null; try { amt = JSON.parse((DB.t.app_settings[DB.hh + "|work_settings"] || {}).value || "{}").amount; } catch (e) { }
+      const sp = round2(rows("transactions").filter(t => t.kind === "trasferimento" && t.transfer_account_id === f.id && t.occurred_on.startsWith(m)).reduce((s, t) => s + Number(t.amount), 0));
+      return `<div class="card"><h2>Fondo spese lavoro</h2><div class="row"><span class="n">Disponibile</span><b class="num">${eur(av)}</b></div>
+        ${amt ? `<div class="row"><span class="n">Da farsi rimborsare</span><b class="num">${eur(Math.max(0, amt - av))}</b></div>` : ""}
+        <div class="row"><span class="n">Speso questo mese</span><b class="num">${eur(sp)}</b></div>
+        <p class="hint">Per segnare una spesa di lavoro tocca + e spunta «Spesa di lavoro». La nota spese si prepara dal Mac.</p></div>`; })() : ""}
+    <div class="card"><h2>Sincronizzazione</h2>
+      <p class="hint">${statusLine()}${syncError && syncError !== "offline" ? `<br><span class="err">${esc(syncError)}</span>` : ""}</p>
+      <p class="hint">Le spese inserite qui senza rete restano nel telefono e partono da sole appena torna la connessione.</p>
+      <button class="btn" id="sn">Aggiorna adesso</button></div>
+    <div class="card"><h2>Cambia password</h2>
+      <label class="f"><span>Nuova password (almeno 8 caratteri)</span><input type="password" id="p1" autocomplete="new-password"></label>
+      <label class="f"><span>Ripeti la password</span><input type="password" id="p2" autocomplete="new-password"></label>
+      <p class="err" id="pe"></p><button class="btn" id="ps">Cambia password</button></div>
+    <div class="card"><h2>Installare l'app</h2><div class="help-body"><ol>
+      <li>Apri questa pagina con <b>Safari</b>${set.acc_app_url ? ` (${esc(set.acc_app_url)})` : ""}.</li>
+      <li>Tocca <b>Condividi</b> (quadrato con la freccia) e poi <b>Aggiungi alla schermata Home</b>.</li>
+      <li>Da lì si apre a schermo intero, come un'app.</li></ol></div></div>
+    <div class="card" id="lockcard"></div>
+    <div class="card"><h2>Esci</h2><p class="hint">Scollega questo telefono. I dati restano su Supabase.</p><button class="btn danger" id="lo">Esci</button></div>`;
+  drawLockCard();
+  if ($("#gr-save")) $("#gr-save").onclick = () => { const v = $("#gr-n").value.replace(/\s+/g, " ").trim().slice(0, 40);
+    write("app_settings", { key: "greet_" + uid(), value: v || null }); $("#gr-n").value = greetName(); toast("Salvato: ti saluto come " + greetName()); };
+  $("#sn").onclick = async () => { await sync(); toast(syncError === "offline" ? "Sei offline" : syncError || "Dati aggiornati"); render(); };
+  $("#ps").onclick = async () => {
+    const a = $("#p1").value, b = $("#p2").value;
+    if (a.length < 8) return $("#pe").textContent = "Almeno 8 caratteri";
+    if (a !== b) return $("#pe").textContent = "Le due password non coincidono";
+    try { await updatePassword(a); $("#p1").value = $("#p2").value = ""; $("#pe").textContent = ""; toast("Password cambiata"); }
+    catch (e) { $("#pe").textContent = e instanceof Offline ? "Serve la connessione a internet" : /different/i.test(e.message) ? "Deve essere diversa da quella attuale" : e.message; }
+  };
+  $("#lo").onclick = () => {
+    const p = pendingCount();
+    if (p && !confirm(`${p} modifiche non sono ancora state inviate: se esci le perdi. Uscire lo stesso?`)) return;
+    logout(); saveLockCfg({ enabled: false }); renderLogin();
+  };
+}
+
+/* ==========================================================================
+   Blocco con Face ID (passkey del telefono: il volto lo controlla l'iPhone, l'app riceve solo «ok»)
+   ========================================================================== */
+const LOCK_KEY = "finanze-lock";
+function lockCfg() { try { return JSON.parse(localStorage.getItem(LOCK_KEY)) || { enabled: false }; } catch (e) { return { enabled: false }; } }
+function saveLockCfg(c) { try { localStorage.setItem(LOCK_KEY, JSON.stringify(c)); } catch (e) { } }
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+async function lockSupported() {
+  try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; }
+}
+async function enableLock(after) {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: "Finanze di Famiglia", id: location.hostname },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: DB.email || "famiglia", displayName: (DB.members[uid()] || DB.email || "Famiglia") + " · Finanze" },
+    pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+    timeout: 60000 } });
+  saveLockCfg({ enabled: true, credId: b64u(cred.rawId), after });
+}
+async function verifyLock() {
+  const c = lockCfg();
+  await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, timeout: 60000, userVerification: "required",
+    allowCredentials: c.credId ? [{ type: "public-key", id: unb64u(c.credId), transports: ["internal"] }] : [] } });
+}
+function showLock() {
+  if ($("#lock")) return;
+  document.body.insertAdjacentHTML("beforeend", `<div id="lock" class="lock"><div class="lock-box">
+    <img src="apple-touch-icon.png" alt=""><h1>Finanze di Famiglia</h1><p class="muted">Tocca un punto qualsiasi per sbloccare con Face ID</p>
+    <button class="btn primary wide" id="lock-go">Sblocca con Face ID</button><p class="err" id="lock-err"></p>
+    <button class="btn link" id="lock-out" style="margin-top:20px">Non funziona? Esci e accedi con la password</button></div></div>`);
+  document.body.style.overflow = "hidden";
+  let busy = false;
+  const go = async auto => {
+    if (busy || !$("#lock")) return; busy = true; $("#lock-err").textContent = "";
+    try { await verifyLock(); $("#lock").remove(); document.body.style.overflow = $("#sheet") ? "hidden" : ""; }
+    catch (e) { if (!auto && $("#lock-err")) $("#lock-err").textContent = e.name === "NotAllowedError" ? "Annullato o non riconosciuto: tocca di nuovo «Sblocca»" : (e.message || "Non riuscito"); }
+    busy = false;
+  };
+  // il Face ID parte dal tocco: così l'iPhone va dritto al riconoscimento del volto, senza la finestra «Usa la passkey»
+  // che compare quando la richiesta parte da sola (Safari la mostra sempre se non c'è un tocco)
+  $("#lock").onclick = e => { if (!e.target.closest("#lock-out")) go(false); };
+  $("#lock-out").onclick = () => {
+    const p = pendingCount();
+    if (!confirm(p ? `${p} modifiche non sono ancora state inviate: se esci le perdi. Uscire?` : "Uscire? Poi accedi di nuovo con email e password.")) return;
+    logout(); saveLockCfg({ enabled: false }); $("#lock").remove(); document.body.style.overflow = ""; renderLogin();
+  };
+
+}
+async function drawLockCard() {
+  const box = $("#lockcard"); if (!box) return;
+  const ok = await lockSupported(), c = lockCfg();
+  if (!$("#lockcard")) return;
+  box.innerHTML = `<h2>Blocco con Face ID</h2>${ok ? `
+    <p class="hint">Quando apri l'app, o ci torni dopo un po', chiede il Face ID prima di mostrare i dati. Vale solo per questo telefono.</p>
+    <label class="f"><span>Chiedilo</span><select id="lk-after">${[[0, "Ogni volta che riapri l'app"], [5, "Dopo 5 minuti"], [15, "Dopo 15 minuti"], [60, "Dopo 1 ora"]]
+      .map(([v, l]) => `<option value="${v}" ${v === (c.after ?? 5) ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    ${c.enabled ? `<button class="btn" id="lk-save">Salva</button> <button class="btn danger" id="lk-off">Disattiva</button>` : `<button class="btn primary" id="lk-on">Attiva Face ID</button>`}
+    <p class="err" id="lk-err"></p>`
+    : `<p class="hint">Su questo telefono o browser non è disponibile. Serve un iPhone con Face ID o Touch ID e l'app aperta da Safari o dalla schermata Home.</p>`}`;
+  if ($("#lk-on")) $("#lk-on").onclick = async () => {
+    try { await enableLock(+$("#lk-after").value); toast("Face ID attivo"); drawLockCard(); }
+    catch (e) { $("#lk-err").textContent = e.name === "NotAllowedError" ? "Annullato" : (e.message || "Non riuscito"); }
+  };
+  if ($("#lk-save")) $("#lk-save").onclick = () => { saveLockCfg(Object.assign(lockCfg(), { after: +$("#lk-after").value })); toast("Salvato"); };
+  if ($("#lk-off")) $("#lk-off").onclick = async () => {
+    try { await verifyLock(); saveLockCfg({ enabled: false }); toast("Face ID disattivato"); drawLockCard(); }
+    catch (e) { $("#lk-err").textContent = "Per disattivarlo serve il Face ID"; }
+  };
+}
+
+/* ==========================================================================
+   Avvio
+   ========================================================================== */
+async function start() {
+  try {
+    const link = await sessionFromLink();
+    if (link === "recovery") return renderLogin("nuova");
+    if (link) { await enterHousehold(); toast("Benvenuto!"); }
+  } catch (e) { return renderLogin("", e.message); }
+  if (!DB.session || !DB.hh) return renderLogin();
+  if (lockCfg().enabled) showLock();
+  renderShell();
+  const vai = new URLSearchParams(location.search).get("vai");
+  if (vai && canEdit()) { history.replaceState(null, "", location.pathname); if (vai === "km") openKm("giorno"); if (vai === "km-weekend") openKm("weekend"); }
+  sync().then(() => !$("#sheet") && render());
+}
+document.addEventListener("visibilitychange", () => {
+  const c = lockCfg();
+  if (document.visibilityState === "hidden") { try { localStorage.setItem("finanze-hidden-at", String(Date.now())); } catch (e) { } return; }
+  if (DB.session && c.enabled && !$("#lock")) {
+    let at = 0; try { at = +localStorage.getItem("finanze-hidden-at") || 0; } catch (e) { }
+    if (!c.after || Date.now() - at > c.after * 60000) showLock();
+  }
+  wakeTouched = Date.now(); keepAwake();
+  if (DB.session) sync().then(() => !$("#sheet") && render());
+});
+window.addEventListener("online", () => DB.session && sync().then(() => !$("#sheet") && render()));
+setInterval(() => { if (document.visibilityState === "visible" && DB.session && !$("#sheet")) sync().then(render); }, 120000);
+setInterval(() => { if (S.view === "spesa" && document.visibilityState === "visible" && DB.session && !$("#sheet") && navigator.onLine) sync().then(() => S.view === "spesa" && !$("#sheet") && render()); }, 15000);
+/* copia di prova: nessun service worker (non deve toccare la cache dell'app vera) */
+start();
