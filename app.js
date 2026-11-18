@@ -403,7 +403,8 @@ function openKmHub() {
   const mainLbl = weFirst ? "Segna i km del weekend" : todayMissing ? "Segna i km di oggi" : miss.length ? `Completa ${dayLabel(miss[0].day)}` : "";
   // menu «Work»: barra che esce dal lato destro, con la pagina sotto oscurata; le voci aprono le schermate di sempre
   const item = (id, icon, title, sub, cls = "") => `<button class="wk-i ${cls}" id="${id}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span><b>${title}</b>${sub ? `<em>${sub}</em>` : ""}</span><i aria-hidden="true">›</i></button>`;
-  const bg = document.createElement("div"); bg.className = "drawer-bg"; document.body.appendChild(bg);
+  const reuse = document.querySelector(".drawer-bg");
+  const bg = reuse || document.createElement("div"); if (!reuse) { bg.className = "drawer-bg"; document.body.appendChild(bg); }
   const sheet = document.createElement("aside"); sheet.className = "sheet drawer"; sheet.id = "sheet"; sheet.setAttribute("aria-label", "Work");
   sheet.innerHTML = `<div class="wk-head"><div><span>Auto aziendale e trasferte</span><h2>Work</h2></div><button class="wk-x" id="kh-x" aria-label="Chiudi">✕</button></div>
     <div class="wk-sum">
@@ -422,10 +423,11 @@ function openKmHub() {
     ${ed ? item("kh-off", ICON.off, "Ferie, malattia", "o permesso") : ""}
     ${item("kh-xls", ICON.xls, "Nota spese", "Excel o PDF da stampare")}`;
   document.body.appendChild(sheet); document.body.style.overflow = "hidden";
+  if (reuse) sheet.classList.add("on", "sub");     // tornando da una schermata: niente nuova entrata
   requestAnimationFrame(() => { bg.classList.add("on"); sheet.classList.add("on"); });
   const shut = () => { sheet.remove(); bg.remove(); document.body.style.overflow = ""; };
   const closeAll = () => { S.kmMode = false; bg.classList.remove("on"); sheet.classList.remove("on"); setTimeout(() => { shut(); render(); }, 260); };
-  const go = fn => () => { shut(); fn(); };
+  const go = fn => () => { sheet.remove(); fn(); setTimeout(() => { if (!document.querySelector(".sheet")) { bg.remove(); document.body.style.overflow = ""; } }, 50); };
   const back = null;   // il ritorno al menu lo fa «‹ Indietro» (S.kmMode)
   $("#kh-x", sheet).onclick = closeAll; bg.onclick = closeAll;
   // trascinando verso destra si chiude
@@ -1262,6 +1264,15 @@ function openSheet(title, body, onSave, { saveLabel = "Salva", del, hub = false 
     ${del && canEdit() ? `<button class="btn danger wide" id="sdel" style="margin-top:8px">${esc(del.label)}</button>` : ""}
     ${onSave && canEdit() ? `<div class="save-bar"><button class="btn primary wide" id="ss">${esc(saveLabel)}</button></div>` : ""}`;
   document.body.appendChild(sheet); document.body.style.overflow = "hidden";
+  // dentro «Work» le schermate restano nella barra laterale di destra, con la pagina oscurata a sinistra
+  if (S.kmMode && !hub) {
+    sheet.classList.add("drawer", "on", "sub");
+    let bg = document.querySelector(".drawer-bg");
+    if (!bg) { bg = document.createElement("div"); bg.className = "drawer-bg on"; document.body.insertBefore(bg, sheet); }
+    bg.onclick = () => $("#sx", sheet).click();
+    const mo = new MutationObserver(() => { if (!sheet.isConnected) { mo.disconnect(); setTimeout(() => { if (!document.querySelector(".sheet.drawer")) bg.remove(); }, 300); } });
+    mo.observe(document.body, { childList: true });
+  }
   // tornando indietro si riapre il menu precedente, a meno che la schermata ne abbia già aperta un'altra
   const close = () => { sheet.remove(); document.body.style.overflow = ""; S.keepKm = !!back; render(); S.keepKm = false;
     if (back) setTimeout(() => { if (!document.querySelector(".sheet")) back(); }, 120); };

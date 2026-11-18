@@ -457,3 +457,33 @@ input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }  
 .wk-i i { font-style: normal; color: var(--faint); font-size: 20px; }
 .wk-i:active { transform: scale(.98); }
 .wk-i.hl { background: var(--navy); border-color: transparent; color: #FFFFFF; } .wk-i.hl svg { color: var(--yellow); } .wk-i.hl em, .wk-i.hl i { color: rgba(255, 255, 255, .65); }
+.sheet.drawer.sub { transition: none; }
+.sheet.drawer .save-bar { left: auto; width: min(86vw, 360px); border-radius: 0 0 0 26px; }
+.sheet.drawer .sheet-head h2 { font-size: 18px; }
+.sheet.drawer .kh-grid, .sheet.drawer .grid2 { gap: 8px; }
+/* schermate di «Work» nella barra laterale (più stretta): titolo sotto «‹ Indietro», campi che non escono */
+.sheet.drawer .sheet-head { flex-wrap: wrap; justify-content: flex-start; gap: 2px 0; margin-bottom: 14px; }
+.sheet.drawer .sheet-head > .btn.link { padding-left: 0; }
+.sheet.drawer .sheet-head h2 { flex: 1 0 100%; font-size: 22px; line-height: 1.2; letter-spacing: -.01em; }
+.sheet.drawer .sheet-head > span { display: none; }
+.sheet.drawer .amount { font-size: 38px; }
+.sheet.drawer .amount::placeholder { font-size: 26px; }
+.sheet.drawer .grid2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.sheet.drawer input, .sheet.drawer select, .sheet.drawer textarea { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.sheet.drawer .grid2 .f, .sheet.drawer .f { min-width: 0; }
+/* barra laterale «Work»: tutto più compatto (i campi restano a 16px, sotto l'iPhone ingrandisce la pagina) */
+.sheet.drawer.sub { width: min(92vw, 380px); padding-left: 12px; padding-right: 12px; font-size: 14px; }
+.sheet.drawer.sub .save-bar { width: min(92vw, 380px); padding: 8px 12px calc(10px + var(--safe-b)); }
+.sheet.drawer .sheet-head h2 { font-size: 20px; }
+.sheet.drawer input[type=text], .sheet.drawer input[type=date], .sheet.drawer input[type=time], .sheet.drawer select, .sheet.drawer textarea { padding: 9px 11px; border-radius: 11px; }
+.sheet.drawer label.f { margin-bottom: 9px; }
+.sheet.drawer label.f > span, .sheet.drawer .f > span { font-size: 12px; margin-bottom: 3px; }
+.sheet.drawer .card { padding: 11px 12px; border-radius: 16px; margin-bottom: 10px; }
+.sheet.drawer .row { padding: 7px 0; font-size: 14px; }
+.sheet.drawer .hint, .sheet.drawer p { font-size: 13px; }
+.sheet.drawer .btn.wide { padding: 11px; font-size: 16px; }
+.sheet.drawer .amount { font-size: 34px; margin: 2px 0; }
+.sheet.drawer .amount-line { font-size: 12.5px; }
+.sheet.drawer h3 { font-size: 15px; }
+.sheet.drawer .pw-stats b, .sheet.drawer .kh-sum b { font-size: 16px; }
+.sheet.drawer .pw-stats span, .sheet.drawer .kh-sum span { font-size: 11px; }
