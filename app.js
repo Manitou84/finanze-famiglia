@@ -409,22 +409,22 @@ function openKmHub() {
   const reuse = document.querySelector(".drawer-bg");
   const bg = reuse || document.createElement("div"); if (!reuse) { bg.className = "drawer-bg"; document.body.appendChild(bg); }
   const sheet = document.createElement("aside"); sheet.className = "sheet drawer"; sheet.id = "sheet"; sheet.setAttribute("aria-label", "Work");
-  sheet.innerHTML = `<div class="wk-grab" aria-hidden="true"></div><div class="wk-head"><div><span>Auto aziendale e trasferte</span><h2>Work</h2></div><button class="wk-x" id="kh-x" aria-label="Chiudi">✕</button></div>
-    <div class="wk-sum">
-      <div><span>Oggi</span><b>${esc(todayTxt)}</b></div>
-      <div><span>Settimana</span><b class="num">${fmtKm(wk.km)} km</b></div>
-      <div><span>Da fare</span><b class="${miss.length ? "out" : ""}">${miss.length ? miss.length + (miss.length === 1 ? " giorno" : " giorni") : "nulla"}</b></div>
-    </div>
-    ${miss.length ? `<p class="hint" style="margin:-2px 2px 10px">Mancano: ${miss.map(x => dayLabel(x.day)).join(", ")}</p>` : ""}
-    <div class="wk-grp">Chilometri</div>
-    ${ed ? item("kh-today", ICON.car, "Km di oggi", esc(todayTxt), "hl") : ""}
-    ${ed ? item("kh-we", ICON.cal, "Km weekend", weE ? `${fmtKm(weE.private_km)} km privati` : "contachilometri della domenica") : ""}
-    ${item("kh-week", ICON.list, "Settimana", "giorni, km e rifornimenti")}
-    ${ed ? item("kh-crm", ICON.crm, "Carica dal CRM", "paesi e clienti del giro") : ""}
-    <div class="wk-grp">Spese e assenze</div>
-    ${ed ? item("kh-fuel", ICON.fuel, "Carburante", "carta aziendale") : ""}
-    ${ed ? item("kh-off", ICON.off, "Ferie, malattia", "o permesso") : ""}
-    ${item("kh-xls", ICON.xls, "Nota spese", "Excel o PDF da stampare")}`;
+  // menu compatto: righe da 4 pulsanti, al massimo mezzo schermo
+  const key = (id, icon, label, cls = "") => `<button class="wk-k ${cls}" id="${id}" title="${label}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span>${label}</span></button>`;
+  const si = p => `<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
+  sheet.innerHTML = `<div class="wk-grab" aria-hidden="true"></div>
+    <div class="wk-top"><h2>Work</h2><button class="wk-x" id="kh-x" aria-label="Chiudi">✕</button></div>
+    <div class="wk-line"><span title="Oggi">${si(ICON.car)}<b>${esc(todayTxt)}</b></span><span title="Questa settimana">${si(ICON.list)}<b class="num">${fmtKm(wk.km)} km</b></span>
+      <span title="Giorni da completare" class="${miss.length ? "out" : ""}">${si('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')}<b>${miss.length ? miss.length + (miss.length === 1 ? " giorno" : " giorni") : "nulla"}</b></span></div>
+    <div class="wk-keys">
+      ${ed ? key("kh-today", ICON.car, "Km oggi", "hl") : ""}
+      ${ed ? key("kh-we", ICON.cal, "Weekend") : ""}
+      ${key("kh-week", ICON.list, "Settimana")}
+      ${ed ? key("kh-crm", ICON.crm, "CRM") : ""}
+      ${ed ? key("kh-fuel", ICON.fuel, "Carburante") : ""}
+      ${ed ? key("kh-off", ICON.off, "Ferie") : ""}
+      ${key("kh-xls", ICON.xls, "Nota spese")}
+    </div>`;
   document.body.appendChild(sheet); document.body.style.overflow = "hidden";
   if (reuse) sheet.classList.add("on", "sub");     // tornando da una schermata: niente nuova entrata
   requestAnimationFrame(() => { bg.classList.add("on"); sheet.classList.add("on"); });

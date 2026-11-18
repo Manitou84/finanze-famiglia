@@ -509,3 +509,27 @@ body.wk-bottom .sheet.drawer.sub::before { content: ""; display: block; width: 4
 body.wk-bottom .sheet.drawer .save-bar, body.wk-bottom .sheet.drawer.sub .save-bar { left: 0; width: 100%; border-radius: 0; padding: 10px 16px calc(12px + var(--safe-b)); }
 /* a tutta larghezza le coppie di campi tornano affiancate */
 body.wk-bottom .sheet.drawer [style*="grid-template-columns:1fr 1fr"], body.wk-bottom .sheet.drawer .grid2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; gap: 10px !important; }
+
+/* menu «Work» compatto (dal basso): titolo, una riga di stato, pulsanti a 4 per riga */
+body.wk-bottom .sheet.drawer:not(.sub) { max-height: 50vh; padding: 8px 14px calc(16px + var(--safe-b)); }
+.wk-top { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 8px; }
+.wk-top h2 { margin: 0; font-size: 22px; letter-spacing: -.01em; }
+.wk-top .wk-x { width: 32px; height: 32px; font-size: 13px; }
+.wk-line { display: flex; gap: 6px; margin-bottom: 12px; }
+.wk-line span { flex: 1; min-width: 0; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; }
+.wk-line b { display: block; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-line b.out { color: var(--out); }
+.wk-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.wk-k { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; aspect-ratio: 1 / .92; padding: 6px 4px; border-radius: 16px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.1; text-align: center; }
+.wk-k svg { width: 24px; height: 24px; color: var(--move); fill: none; stroke: currentColor; stroke-width: 1.7; }
+.wk-k.hl { background: var(--navy); border-color: transparent; color: #FFFFFF; } .wk-k.hl svg { color: var(--yellow); }
+.wk-k:active { transform: scale(.95); }
+/* solo icone */
+.wk-k { aspect-ratio: 1; gap: 0; } .wk-k svg { width: 30px; height: 30px; stroke-width: 1.6; }
+.wk-line span { display: flex; align-items: center; gap: 6px; padding: 7px 8px; }
+.wk-line span svg { width: 16px; height: 16px; flex: none; color: var(--move); fill: none; stroke: currentColor; stroke-width: 1.8; }
+.wk-line span.out svg, .wk-line span.out b { color: var(--out); }
+/* icone con etichetta piccola */
+.wk-k { aspect-ratio: 1; gap: 6px; } .wk-k svg { width: 26px; height: 26px; }
+.wk-k span { font-size: 11px; font-weight: 600; line-height: 1.1; }
