@@ -32,6 +32,7 @@ const ICON = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   work: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+  bill: '<path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   fuel: '<path d="M5 20V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v15M4 20h11M5 10h9"/><path d="M14 8l3 3v6a1.5 1.5 0 0 0 3 0v-7l-3-3"/>',
   crm: '<path d="M12 21s-6-5.4-6-10a6 6 0 0 1 12 0c0 4.6-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
   off: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
@@ -203,7 +204,8 @@ function viewHome() {
     </section>
     ${canEdit() ? `<div class="hn-quick">
       <button id="q-add"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.plus}</svg>Spesa</button>
-      <button id="q-scan"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.receipt}</svg>Scontrino</button>
+      ${kmMine() ? `<button id="q-bill"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.bill}</svg>Fattura</button>`   /* chi tiene i km: dati per la fattura al posto dello scontrino */
+        : `<button id="q-scan"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.receipt}</svg>Scontrino</button>`}
       ${kmMine() ? (() => { const st = kmQuickState(); return `<button id="q-km" class="${st.todo ? "todo" : ""}" aria-label="Km lavoro: ${esc(st.text)}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.car}</svg>Km<em>${esc(st.text)}</em></button>`; })() : ""}
       <button id="q-list"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg>Lista</button></div>` : ""}
     ${isNow && medsOwner() ? pollenHigh().slice(0, 1).map(p => `<div class="card alert ${p.level === "molto alto" ? "late" : "wait"}" id="pol-al"><b>Graminacee ${p.level === "molto alto" ? "molto alte" : "alte"} ${p.day === todayIso() ? "oggi" : p.day === addDays(todayIso(), 1) ? "domani" : dayLabel(p.day)}</b> ${Math.round(p.v)} granuli/m³${pollenHigh().length > 1 ? " e nei giorni dopo" : ""}: tieni a portata la terapia ›</div>`).join("") : ""}
@@ -257,6 +259,7 @@ function viewHome() {
   if ($("#fc-open")) $("#fc-open").onclick = openForecast;
   bindHomeKm(); bindHomeMeds();
   if ($("#q-add")) $("#q-add").onclick = () => openTx();
+  if ($("#q-bill")) $("#q-bill").onclick = () => billingGet() ? openBilling() : openBillingEdit();
   if ($("#q-scan")) $("#q-scan").onclick = () => { openTx(); const f = $("#scanf"); if (f) f.click(); };
   if ($("#q-km")) $("#q-km").onclick = () => openKmHub();
   if ($("#q-list")) $("#q-list").onclick = () => { S.view = "spesa"; render(); window.scrollTo(0, 0); };
@@ -408,6 +411,7 @@ function openKmHub() {
     ${miss.length ? `<p class="hint" style="margin:-4px 4px 12px">Mancano: ${miss.map(x => dayLabel(x.day)).join(", ")}</p>` : ""}
     ${ed && mainLbl ? `<button class="btn primary wide" id="kh-main" style="margin-bottom:14px">${mainLbl}</button>` : ""}
     <div class="kh-grid">
+      ${tile("kh-bill", ICON.bill, "Dati per la fattura", billingGet() ? "a tutto schermo, per ristoranti e alberghi" : "scrivili una volta, poi li mostri alla cassa", "wide kbill")}
       ${ed ? tile("kh-today", ICON.car, "Km di oggi", esc(todayTxt)) : ""}
       ${ed ? tile("kh-we", ICON.cal, "Km weekend", weE ? `${fmtKm(weE.private_km)} km privati` : "contachilometri della domenica") : ""}
       ${tile("kh-week", ICON.list, "Settimana", "giorni, km e rifornimenti")}
@@ -424,6 +428,7 @@ function openKmHub() {
   if ($("#kh-today", sheet)) $("#kh-today", sheet).onclick = go(() => openKm("giorno"));
   if ($("#kh-we", sheet)) $("#kh-we", sheet).onclick = go(() => openKm("weekend"));
   $("#kh-week", sheet).onclick = go(() => openKmWeek(mondayOf(t)));
+  $("#kh-bill", sheet).onclick = () => billingGet() ? openBilling() : go(() => openBillingEdit(openKmHub))();
   if ($("#kh-fuel", sheet)) $("#kh-fuel", sheet).onclick = go(() => openFuel(null, back));
   if ($("#kh-crm", sheet)) $("#kh-crm", sheet).onclick = go(() => pickGiroCrm(back));
   if ($("#kh-off", sheet)) $("#kh-off", sheet).onclick = go(() => openAbsence(t, null, back));
@@ -729,6 +734,54 @@ function openFuel(f, back) {
   };
   ["#fu-a", "#fu-t", "#fu-k", "#fu-p"].forEach(q => $(q, sheet).addEventListener("input", decl)); decl();
   if (!f) setTimeout(() => $("#fu-a", sheet).focus(), 250);
+}
+/* ---------- dati di fatturazione dell'azienda: a tutto schermo da mostrare alla cassa ----------
+   Stanno nel database della famiglia (app_settings «work_billing»), non su GitHub; solo per chi tiene i km. */
+const BILL_FIELDS = [["name", "Ragione sociale"], ["address", "Indirizzo"], ["vat", "Partita IVA"], ["cf", "Codice fiscale"],
+  ["sdi", "Codice destinatario (SDI)"], ["pec", "PEC"], ["note", "Note per la fattura"]];
+function openBilling() {
+  const b = billingGet(); if (!b) return openBillingEdit();
+  const digits = x => String(x || "").replace(/\D/g, "");
+  const same = b.vat && b.cf && digits(b.vat) === digits(b.cf);    // P.IVA e C.F. uguali: un riquadro solo
+  const tile = (k, label, cls = "") => b[k] ? `<button class="bc-t ${cls}" data-k="${k}"><span>${label}</span><b>${esc(b[k])}</b><i>Copia</i></button>` : "";
+  document.body.insertAdjacentHTML("beforeend", `<div id="bill" class="bill" role="dialog" aria-label="Dati per la fattura">
+    <div class="bill-top"><button id="bill-x">Chiudi</button><button id="bill-ed">Modifica</button></div>
+    <div class="bill-card">
+      <div class="bc-head"><span class="bc-pill">Fattura intestata a</span>
+        <button class="bc-name" data-k="name">${esc(b.name)}</button>
+        ${b.address ? `<button class="bc-addr" data-k="address">${esc(b.address).replace(/\n/g, "<br>")}</button>` : ""}</div>
+      ${b.qr ? `<div class="bc-qr"><img src="${b.qr}" alt="QR code per la fattura"><span>Inquadra il codice per i dati di fatturazione</span></div>` : ""}
+      <div class="bc-grid">${same ? tile("vat", "P.IVA e C.F.") + tile("sdi", "Codice SDI", "sdi") : tile("vat", "Partita IVA") + tile("cf", "Codice fiscale") + tile("sdi", "Codice SDI", "sdi wide")}${tile("pec", "PEC", "wide pec")}${tile("note", "Note", "wide")}</div>
+    </div>
+    <p class="bill-hint">Tocca un dato per copiarlo · lo schermo resta acceso</p></div>`);
+  document.body.style.overflow = "hidden";
+  let lock = null;
+  if (navigator.wakeLock) navigator.wakeLock.request("screen").then(l => lock = l).catch(() => { });
+  const close = () => { const e = $("#bill"); if (e) e.remove(); document.body.style.overflow = ""; if (lock) lock.release().catch(() => { }); };
+  $("#bill-x").onclick = close;
+  $("#bill-ed").onclick = () => { close(); openBillingEdit(openBilling); };
+  $$("#bill [data-k]").forEach(el => el.onclick = async () => {
+    try { await navigator.clipboard.writeText(b[el.dataset.k]); el.classList.add("ok"); setTimeout(() => el.classList.remove("ok"), 900); toast("Copiato"); } catch (e) { toast("Non riesco a copiare"); } });
+}
+function openBillingEdit(back) {
+  const b = billingGet() || {};
+  openSheet("Dati per la fattura", `
+    <p class="hint" style="margin-top:0">I dati che l'azienda vuole sulle fatture di ristoranti e alberghi. Li scrivi una volta: poi da Km › «Dati per la fattura» li mostri a tutto schermo alla cassa.</p>
+    ${BILL_FIELDS.map(([k, l]) => `<label class="f"><span>${l}${k === "note" || k === "pec" ? ' <em class="opt">facoltativo</em>' : ""}</span>${k === "address" || k === "note"
+      ? `<textarea id="bi-${k}" rows="2" maxlength="200">${esc(b[k] || "")}</textarea>` : `<input type="text" id="bi-${k}" maxlength="120" autocomplete="off" autocapitalize="${k === "pec" ? "off" : "characters"}" value="${esc(b[k] || "")}">`}</label>`).join("")}
+    <div class="f"><span>QR code per la fattura <em class="opt">facoltativo</em></span>
+      <div class="bi-qr"><img id="bi-qrimg" alt="" ${b.qr ? `src="${b.qr}"` : "hidden"}><label class="btn">${b.qr ? "Cambia immagine" : "Scegli l'immagine del QR"}<input type="file" id="bi-qr" accept="image/*" hidden></label>
+        ${b.qr ? `<button type="button" class="btn link" id="bi-qrno">Togli</button>` : ""}</div></div>`,
+    () => { const d = { qr }; BILL_FIELDS.forEach(([k]) => d[k] = $("#bi-" + k).value); billingSave(d); if (back) setTimeout(back, 50); return "Dati salvati"; });
+  let qr = b.qr || null;
+  // l'immagine del QR rimpicciolita (max 640 px) e salvata come PNG nei dati della famiglia
+  $("#bi-qr").onchange = e => { const file = e.target.files[0]; if (!file) return;
+    const img = new Image(); img.onload = () => { const k = Math.min(1, 640 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); const x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+      x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height); qr = c.toDataURL("image/png");
+      $("#bi-qrimg").src = qr; $("#bi-qrimg").hidden = false; URL.revokeObjectURL(img.src); };
+    img.src = URL.createObjectURL(file); };
+  if ($("#bi-qrno")) $("#bi-qrno").onclick = () => { qr = null; $("#bi-qrimg").hidden = true; };
 }
 function sharePdf(pdf) {
   const f = new File([pdf.blob], pdf.fileName, { type: "application/pdf" });

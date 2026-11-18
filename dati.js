@@ -1233,6 +1233,18 @@ function saveFuel(d) {
   write("app_settings", { key: "fuel_card", value: JSON.stringify(items) });
   return id;
 }
+/* dati di fatturazione dell'azienda (iPhone: Km › Dati per la fattura) */
+function billingGet() {
+  const r = DB.t.app_settings[DB.hh + "|work_billing"];
+  try { const v = JSON.parse(r && r.value || "null"); return v && v.name ? v : null; } catch (e) { return null; }
+}
+function billingSave(d) {
+  guard();
+  const v = {}; ["name", "address", "vat", "cf", "sdi", "pec", "note"].forEach(k => { const x = String(d[k] || "").trim().slice(0, 200); if (x) v[k] = x; });
+  if (!v.name) throw new Error("Scrivi almeno la ragione sociale");
+  if (d.qr && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(d.qr) && d.qr.length < 400000) v.qr = d.qr;   // QR code dell'azienda per la fattura
+  write("app_settings", { key: "work_billing", value: JSON.stringify(v) });
+}
 const fuelComplete = f => !!(f && f.amount > 0 && f.time && f.odo && f.place);
 function deleteFuel(id) { guard(); write("app_settings", { key: "fuel_card", value: JSON.stringify(fuelList().filter(x => x.id !== id)) }); }
 function kmWeek(monIso) {
