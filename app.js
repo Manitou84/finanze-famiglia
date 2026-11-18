@@ -737,7 +737,7 @@ function openFuel(f, back) {
 }
 /* ---------- dati di fatturazione dell'azienda: a tutto schermo da mostrare alla cassa ----------
    Stanno nel database della famiglia (app_settings «work_billing»), non su GitHub; solo per chi tiene i km. */
-const BILL_FIELDS = [["name", "Ragione sociale"], ["address", "Indirizzo"], ["vat", "Partita IVA"], ["cf", "Codice fiscale"],
+const BILL_FIELDS = [["name", "Ragione sociale"], ["address", "Via e numero civico"], ["zip", "CAP"], ["city", "Comune"], ["prov", "Provincia"], ["vat", "Partita IVA"], ["cf", "Codice fiscale"],
   ["sdi", "Codice destinatario (SDI)"], ["pec", "PEC"], ["note", "Note per la fattura"]];
 function openBilling() {
   const b = billingGet(); if (!b) return openBillingEdit();
@@ -750,7 +750,7 @@ function openBilling() {
       ${b.qr ? `<div class="bc-qr"><img src="${b.qr}" alt="QR code per la fattura"><span>Inquadra il codice per i dati di fatturazione</span></div>` : ""}
       <div class="bc-head"><span class="bc-pill">Fattura intestata a</span>
         <button class="bc-name" data-k="name">${esc(b.name)}</button>
-        ${b.address ? `<button class="bc-addr" data-k="address">${esc(b.address).replace(/\n/g, "<br>")}</button>` : ""}</div>
+        ${b.address || b.city ? `<button class="bc-addr" data-k="fulladdr">${esc(b.address || "").replace(/\n/g, "<br>")}${b.city ? `${b.address ? "<br>" : ""}${esc([b.zip, b.city].filter(Boolean).join(" "))}${b.prov ? ` (${esc(b.prov)})` : ""}` : ""}</button>` : ""}</div>
       <div class="bc-grid">${same ? tile("vat", "P.IVA e C.F.") + tile("sdi", "Codice SDI", "sdi") : tile("vat", "Partita IVA") + tile("cf", "Codice fiscale") + tile("sdi", "Codice SDI", "sdi wide")}${tile("pec", "PEC", "wide pec")}${tile("note", "Note", "wide")}</div>
     </div>
     <p class="bill-hint">Tocca un dato per copiarlo · lo schermo resta acceso</p></div>`);
@@ -763,14 +763,18 @@ function openBilling() {
   $("#bill-x").onclick = close;
   $("#bill-ed").onclick = () => { close(); openBillingEdit(openBilling); };
   $$("#bill [data-k]").forEach(el => el.onclick = async () => {
-    try { await navigator.clipboard.writeText(b[el.dataset.k]); el.classList.add("ok"); setTimeout(() => el.classList.remove("ok"), 900); toast("Copiato"); } catch (e) { toast("Non riesco a copiare"); } });
+    const full = [b.address, [b.zip, b.city].filter(Boolean).join(" ") + (b.prov ? ` (${b.prov})` : "")].filter(x => x && x.trim()).join(", ");
+    try { await navigator.clipboard.writeText(el.dataset.k === "fulladdr" ? full : b[el.dataset.k]); el.classList.add("ok"); setTimeout(() => el.classList.remove("ok"), 900); toast("Copiato"); } catch (e) { toast("Non riesco a copiare"); } });
 }
 function openBillingEdit(back) {
   const b = billingGet() || {};
   openSheet("Dati per la fattura", `
     <p class="hint" style="margin-top:0">I dati che l'azienda vuole sulle fatture di ristoranti e alberghi. Li scrivi una volta: poi da Km › «Dati per la fattura» li mostri a tutto schermo alla cassa.</p>
-    ${BILL_FIELDS.map(([k, l]) => `<label class="f"><span>${l}${k === "note" || k === "pec" ? ' <em class="opt">facoltativo</em>' : ""}</span>${k === "address" || k === "note"
-      ? `<textarea id="bi-${k}" rows="2" maxlength="200">${esc(b[k] || "")}</textarea>` : `<input type="text" id="bi-${k}" maxlength="120" autocomplete="off" autocapitalize="${k === "pec" ? "off" : "characters"}" value="${esc(b[k] || "")}">`}</label>`).join("")}
+    ${(() => { const inp = (k, l, attrs = "") => `<label class="f"><span>${l}${k === "note" || k === "pec" ? ' <em class="opt">facoltativo</em>' : ""}</span>${k === "note"
+        ? `<textarea id="bi-${k}" rows="2" maxlength="200">${esc(b[k] || "")}</textarea>` : `<input type="text" id="bi-${k}" maxlength="120" autocomplete="off" autocapitalize="${k === "pec" ? "off" : "characters"}" value="${esc(b[k] || "")}" ${attrs}>`}</label>`;
+      return inp("name", "Ragione sociale") + inp("address", "Via e numero civico", 'placeholder="es. Via Roma, 10"')
+        + `<div class="bi-loc">${inp("zip", "CAP", 'inputmode="numeric" maxlength="5" placeholder="31030"')}${inp("city", "Comune")}${inp("prov", "Prov.", 'maxlength="2" placeholder="TV"')}</div>`
+        + ["vat", "cf", "sdi", "pec", "note"].map(k => inp(k, BILL_FIELDS.find(x => x[0] === k)[1])).join(""); })()}
     <div class="f"><span>QR code per la fattura <em class="opt">facoltativo</em></span>
       <div class="bi-qr"><img id="bi-qrimg" alt="" ${b.qr ? `src="${b.qr}"` : "hidden"}><label class="btn">${b.qr ? "Cambia immagine" : "Scegli l'immagine del QR"}<input type="file" id="bi-qr" accept="image/*" hidden></label>
         ${b.qr ? `<button type="button" class="btn link" id="bi-qrno">Togli</button>` : ""}</div></div>`,

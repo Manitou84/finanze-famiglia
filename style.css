@@ -431,3 +431,4 @@ input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }  
 .bill-hint { text-align: center; color: rgba(255, 255, 255, .7); font-size: 13px; margin: 14px 0 0; }
 .bi-qr { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .bi-qr img { width: 88px; height: 88px; border-radius: 10px; border: 1px solid var(--line); background: #FFFFFF; image-rendering: pixelated; }
+.bi-loc { display: grid; grid-template-columns: 92px 1fr 70px; gap: 8px; }
