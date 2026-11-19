@@ -32,6 +32,9 @@ const ICON = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   work: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+  pill: '<rect x="3" y="9" width="18" height="7" rx="3.5" transform="rotate(-35 12 12.5)"/><path d="M9.5 8.5l5 7"/>',
+  chart: '<path d="M4 20V4M4 20h16"/><path d="M8 16v-4M12 16V8M16 16v-6"/>',
+  pills: '<circle cx="8" cy="8" r="4"/><path d="M5.2 10.8l5.6-5.6"/><rect x="12" y="12" width="9" height="5" rx="2.5"/>',
   bill: '<path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   fuel: '<path d="M5 20V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v15M4 20h11M5 10h9"/><path d="M14 8l3 3v6a1.5 1.5 0 0 0 3 0v-7l-3-3"/>',
   crm: '<path d="M12 21s-6-5.4-6-10a6 6 0 0 1 12 0c0 4.6-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
@@ -203,7 +206,8 @@ function viewHome() {
       <div class="duo2"><div><span>Entrate</span><b class="num pin">+${eur(d.income)}</b></div><div><span>Uscite</span><b class="num pout">−${eur(d.expense)}</b></div></div>
     </section>
     ${canEdit() ? `<div class="hn-quick">
-      <button id="q-add"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.plus}</svg>Spesa</button>
+      ${medsOwner() && canEdit() ? `<button id="q-meds"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.pill}</svg>Pastiglie</button>`   /* chi ha le pastiglie: al posto di Spesa */
+        : `<button id="q-add"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.plus}</svg>Spesa</button>`}
       ${kmMine() ? `<button id="q-bill"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.bill}</svg>Fattura</button>`   /* chi tiene i km: dati per la fattura al posto dello scontrino */
         : `<button id="q-scan"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.receipt}</svg>Scontrino</button>`}
       ${kmMine() ? (() => { const st = kmQuickState(); return `<button id="q-km" class="${st.todo ? "todo" : ""}" aria-label="Work, km lavoro: ${esc(st.text)}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.car}</svg>Work<em>${esc(st.text)}</em></button>`; })() : ""}
@@ -223,7 +227,6 @@ function viewHome() {
     <div class="card"><div class="card-h2"><h2>Ultimi movimenti</h2>${d.tx.length ? `<button class="btn link" id="all-tx">Tutti</button>` : ""}</div>
       ${d.tx.length ? `<div class="list">${d.tx.filter(t => kmMine() || !workKind(t)).slice(0, 4).map(txRow).join("")}</div>` : `<p class="muted">Nessun movimento.</p>`}</div>
     ${homeForecastCard()}
-    ${homeMedsCard()}
     ${S.month === thisMonth() && new Date().getDate() <= 10 && !S.sumSeen ? homeSummaryCard() : ""}
     ${homeGoalsCard()}
 
@@ -259,6 +262,7 @@ function viewHome() {
   if ($("#fc-open")) $("#fc-open").onclick = openForecast;
   bindHomeKm(); bindHomeMeds();
   if ($("#q-add")) $("#q-add").onclick = () => openTx();
+  if ($("#q-meds")) $("#q-meds").onclick = () => medsGate(() => openMedsHub());
   if ($("#q-bill")) $("#q-bill").onclick = () => billingGet() ? openBilling() : openBillingEdit();
   if ($("#q-scan")) $("#q-scan").onclick = () => { openTx(); const f = $("#scanf"); if (f) f.click(); };
   if ($("#q-km")) $("#q-km").onclick = () => openKmHub();
@@ -393,7 +397,7 @@ function kmQuickState() {
 const WORK_STYLE = "bottom";
 function openKmHub() {
   document.body.classList.toggle("wk-bottom", WORK_STYLE === "bottom");
-  S.kmMode = true;
+  S.kmMode = true; S.hubFn = openKmHub;
   const t = todayIso(), dow = new Date(t + "T12:00:00").getDay(), rs = kmRows();
   const todayE = rs.find(r => r.day === t && r.kind === "giorno"), sun = lastSunday();
   const weE = rs.find(r => r.day === sun && r.kind === "weekend");
@@ -481,6 +485,38 @@ async function bindHomeMeds() {
     const t = todayIso(), meds = await medsList(), xs = (await medsDoses(t.slice(0, 7))).filter(x => x.at.startsWith(t));
     $("#md-today").textContent = xs.length ? "Oggi: " + xs.map(x => `${(meds.find(m => m.id === x.med_id) || {}).name || "?"} ${qtyText(x.qty)} alle ${x.at.slice(11)}`).join(", ") : "Oggi niente";
   } catch (e) { }
+}
+/* ---------- menu «Pastiglie» dal basso (come Work): oggi, «Ho preso», e Elenco / Calendario / Grafici / Farmaci ---------- */
+async function openMedsHub() {
+  S.kmMode = true; S.hubFn = openMedsHub; S.keepKm = false;
+  document.body.classList.add("wk-bottom");
+  const t = todayIso(), meds = (await medsList()).filter(m => m.active !== false);
+  const xs = (await medsDoses(t.slice(0, 7))).filter(x => x.at.startsWith(t)).sort((a, b) => a.at.localeCompare(b.at));
+  const nameOf = id => (meds.find(m => m.id === id) || {}).name || "?";
+  const key = (id, icon, label) => `<button class="wk-k" id="${id}" title="${label}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span>${label}</span></button>`;
+  const reuse = document.querySelector(".drawer-bg");
+  const bg = reuse || document.createElement("div"); if (!reuse) { bg.className = "drawer-bg"; document.body.appendChild(bg); }
+  const sheet = document.createElement("aside"); sheet.className = "sheet drawer"; sheet.id = "sheet"; sheet.setAttribute("aria-label", "Pastiglie");
+  sheet.innerHTML = `<div class="wk-grab" aria-hidden="true"></div>
+    <div class="wk-top"><h2>Pastiglie</h2><button class="wk-x" id="mh-x" aria-label="Chiudi">✕</button></div>
+    <div class="mh-today">${xs.length ? xs.map(x => `<button class="mh-d" data-x="${x.id}"><b>${x.at.slice(11)}</b> ${esc(nameOf(x.med_id))} <span>${qtyText(x.qty)}</span></button>`).join("") : `<span class="muted">Oggi non hai ancora segnato niente</span>`}</div>
+    ${meds.length ? `<div class="mh-quick">${meds.slice(0, 4).map(m => `<button class="mh-q" data-m="${m.id}"><span class="dot" style="background:${m.color}"></span>${esc(m.name)}</button>`).join("")}</div>` : ""}
+    <button class="btn primary wide" id="mh-take" style="margin:2px 0 12px">Ho preso una pastiglia</button>
+    <div class="wk-keys">${key("mh-list", ICON.list, "Elenco")}${key("mh-cal", ICON.cal, "Calendario")}${key("mh-graf", ICON.chart, "Grafici")}${key("mh-farm", ICON.pills, "Farmaci")}</div>`;
+  document.body.appendChild(sheet); document.body.style.overflow = "hidden";
+  if (reuse) sheet.classList.add("on", "back");
+  requestAnimationFrame(() => { bg.classList.add("on"); sheet.classList.add("on"); });
+  const shut = () => { sheet.remove(); bg.remove(); document.body.style.overflow = ""; };
+  const closeAll = () => { S.kmMode = false; S.hubFn = null; bg.classList.remove("on"); sheet.classList.remove("on"); setTimeout(() => { shut(); render(); }, 260); };
+  const go = fn => () => { sheet.remove(); fn(); setTimeout(() => { if (!document.querySelector(".sheet")) { bg.remove(); document.body.style.overflow = ""; } }, 50); };
+  $("#mh-x", sheet).onclick = closeAll; bg.onclick = closeAll;
+  let y0 = null;
+  sheet.addEventListener("touchstart", e => { y0 = sheet.scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
+  sheet.addEventListener("touchend", e => { if (y0 != null && e.changedTouches[0].clientY - y0 > 80) closeAll(); y0 = null; }, { passive: true });
+  $("#mh-take", sheet).onclick = go(() => openDose());
+  $$(".mh-q", sheet).forEach(b => b.onclick = go(() => openDose({ at: `${t}T${new Date().toTimeString().slice(0, 5)}`, qty: 1, med_id: b.dataset.m, isNew: true })));
+  $$(".mh-d", sheet).forEach(b => b.onclick = go(async () => { const x = xs.find(z => z.id === b.dataset.x); if (x) openDose(x); }));
+  [["mh-list", "lista"], ["mh-cal", "cal"], ["mh-graf", "graf"], ["mh-farm", "farm"]].forEach(([id, tab]) => $("#" + id, sheet).onclick = go(() => openMeds(tab)));
 }
 /* prima di aprire: password da creare o da inserire (una volta per telefono) */
 async function medsGate(next) {
@@ -1262,7 +1298,7 @@ function dueBadgeW(x) {
 let sheetBack = null;
 const goSub = (back, fn) => { sheetBack = back; fn(); };
 function openSheet(title, body, onSave, { saveLabel = "Salva", del, hub = false } = {}) {
-  const back = hub ? null : sheetBack || (S.kmMode ? openKmHub : null); sheetBack = null;
+  const back = hub ? null : sheetBack || (S.kmMode ? (S.hubFn || openKmHub) : null); sheetBack = null;
   const sheet = document.createElement("div"); sheet.className = "sheet"; sheet.id = "sheet";
   sheet.innerHTML = `<div class="sheet-head"><button class="btn link" id="sx">${hub ? "‹ Riepilogo" : back ? "‹ Indietro" : "Chiudi"}</button><h2>${esc(title)}</h2><span style="width:60px"></span></div>
     ${body}<p class="err" id="se"></p>
