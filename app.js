@@ -108,7 +108,6 @@ function renderShell() {
       <button data-v="movimenti"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.list}</svg></span>Movimenti</button>
       <button class="add" id="addbtn" aria-label="Aggiungi una spesa"><span>+</span></button>
       <button data-v="spesa"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg></span>Spesa</button>
-      <button id="tb-meds" hidden><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.pill}</svg></span>Pastiglie</button>
       <button data-v="famiglia"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.fam}</svg></span>Famiglia</button>
     </nav>`;
   $$(".tabbar [data-v]").forEach(b => b.onclick = () => { S.view = b.dataset.v; render(); window.scrollTo(0, 0); });
@@ -133,9 +132,6 @@ function render() {
   if (!$("#view")) return;
   if (!S.keepKm && !document.querySelector(".sheet")) S.kmMode = false;   // uscito dal menu Km
   $$(".tabbar [data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === (S.view === "scadenze" ? "home" : S.view)));
-  // chi ha le pastiglie: nella barra in basso «Pastiglie» (scheda dal basso) al posto di «Spesa»; la lista della spesa resta nel Riepilogo
-  const pm = medsOwner() && canEdit(), tbm = $("#tb-meds"), tbs = $('.tabbar [data-v="spesa"]');
-  if (tbm && tbs) { tbm.hidden = !pm; tbs.hidden = pm; tbm.onclick = () => medsGate(() => openMedsHub()); }
   const withMonth = ["home", "movimenti", "scadenze"].includes(S.view);
   $("#mnav").style.display = withMonth ? "" : "none";
   $("#gear").classList.toggle("on", S.view === "altro");
@@ -214,7 +210,8 @@ function viewHome() {
       ${kmMine() ? `<button id="q-bill"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.bill}</svg>Fattura</button>`   /* chi tiene i km: dati per la fattura al posto dello scontrino */
         : `<button id="q-scan"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.receipt}</svg>Scontrino</button>`}
       ${kmMine() ? (() => { const st = kmQuickState(); return `<button id="q-km" class="${st.todo ? "todo" : ""}" aria-label="Work, km lavoro: ${esc(st.text)}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.car}</svg>Work<em>${esc(st.text)}</em></button>`; })() : ""}
-      <button id="q-list"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg>Lista</button></div>` : ""}
+      ${medsOwner() && canEdit() ? `<button id="q-meds"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.pill}</svg>Pastiglie</button>`   /* chi ha le pastiglie: al posto di Lista (la spesa è nella barra in basso) */
+        : `<button id="q-list"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON.cart}</svg>Lista</button>`}</div>` : ""}
     ${isNow && medsOwner() ? pollenHigh().slice(0, 1).map(p => `<div class="card alert ${p.level === "molto alto" ? "late" : "wait"}" id="pol-al"><b>Graminacee ${p.level === "molto alto" ? "molto alte" : "alte"} ${p.day === todayIso() ? "oggi" : p.day === addDays(todayIso(), 1) ? "domani" : dayLabel(p.day)}</b> ${Math.round(p.v)} granuli/m³${pollenHigh().length > 1 ? " e nei giorni dopo" : ""}: tieni a portata la terapia ›</div>`).join("") : ""}
     ${isNow ? uploadReminders().map(x => `<div class="card alert ${x.lv === "30" ? "wait" : "late"}"><b>Promemoria</b> ${esc(x.text)}</div>`).join("") : ""}
     ${dl.filter(x => x.level).map(x => `<div class="card alert ${x.level === "30" ? "wait" : "late"}"><b>${esc(x.label)} ${esc(x.vehicle)}</b>
@@ -265,6 +262,7 @@ function viewHome() {
   if ($("#fc-open")) $("#fc-open").onclick = openForecast;
   bindHomeKm(); bindHomeMeds();
   if ($("#q-add")) $("#q-add").onclick = () => openTx();
+  if ($("#q-meds")) $("#q-meds").onclick = () => medsGate(() => openMedsHub());
   if ($("#q-meds")) $("#q-meds").onclick = () => medsGate(() => openMedsHub());
   if ($("#q-bill")) $("#q-bill").onclick = () => billingGet() ? openBilling() : openBillingEdit();
   if ($("#q-scan")) $("#q-scan").onclick = () => { openTx(); const f = $("#scanf"); if (f) f.click(); };
