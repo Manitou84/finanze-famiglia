@@ -944,7 +944,11 @@ function forecast() {
   let span = st.days; if (first) span = Math.max(30, Math.min(st.days, daysTo(today) - daysTo(first) + 1));
   const daily = variable.length ? round2(variable.reduce((s, t) => s + t.amount, 0) / span) : 0;
   const m3 = shiftMonth(cur, -3), byM = {};
-  for (const t of tx) if (t.kind === "entrata" && !t.recurring_id && t.occurred_on >= m3 + "-01" && t.occurred_on <= today) byM[t.occurred_on.slice(0, 7)] = (byM[t.occurred_on.slice(0, 7)] || 0) + t.amount;
+  // entrate una tantum fuori dalle «abituali»: TFR, 730, conguagli, arretrati, fondo spese e rimborsi, tredicesima (stimata a parte)
+  const ONE = ["trattamento fine rapporto", "liquidazion", "rimborso irpef", "rimborso imposte", "credito irpef", "conguagl", "arretrat", "rimbors",
+    "nota spese", "note spese", "fondo spese", "anticip", "reintegr", "trasfert", "tredicesim", "13a mensilit", "quattordicesim", "14a mensilit"];
+  const oneOff = d => { const x = " " + String(d || "").toLowerCase() + " "; return /(^|[^a-z0-9])(tfr|730|13ma|14ma)(?![a-z0-9])/.test(x) || ONE.some(w => x.includes(w)); };
+  for (const t of tx) if (t.kind === "entrata" && !t.recurring_id && t.occurred_on >= m3 + "-01" && t.occurred_on <= today && !oneOff(t.description)) byM[t.occurred_on.slice(0, 7)] = (byM[t.occurred_on.slice(0, 7)] || 0) + t.amount;
   const full = [1, 2, 3].map(i => byM[shiftMonth(cur, -i)] || 0).sort((a, b) => a - b);
   const usual = full.some(Boolean) ? round2(full[1]) : 0, gotNow = round2(byM[cur] || 0);
   const covered = words => active.some(r => words.some(w => (r.name + " " + (r.match_text || "")).toLowerCase().includes(w)));
