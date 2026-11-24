@@ -222,6 +222,26 @@ fetch("regole_predefinite.json").then(r => r.json()).then(j => {
 }).catch(() => { });
 const cats = () => Object.values(DB.t.categories).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name));
 const catById = id => DB.t.categories[id];
+/* spese PayPal / Satispay / Amazon da abbinare: appunti che il Mac collega al movimento della banca all'import */
+const PENDING_SERVICES = { paypal: "PayPal", satispay: "Satispay", amazon: "Amazon" };
+function pendingList() {
+  const r = DB.t.app_settings[DB.hh + "|pending_match"];
+  try { const v = JSON.parse(r && r.value || "[]"); return Array.isArray(v) ? v.filter(x => x && x.id && PENDING_SERVICES[x.service]) : []; } catch (e) { return []; }
+}
+function pendingSave(d) {
+  guard();
+  const amount = parseAmount(d.amount);
+  if (!(amount > 0)) throw new Error("Scrivi l'importo");
+  if (!PENDING_SERVICES[d.service]) throw new Error("Scegli PayPal, Satispay o Amazon");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.day || "")) throw new Error("Scegli la data");
+  if (d.day < "2026-11-23") throw new Error("Vale per le spese dal 23/11/2026");
+  if (!d.category_id) throw new Error("Scegli la categoria");
+  const items = pendingList().filter(x => x.id !== d.id);
+  items.push({ id: d.id || uuid4(), service: d.service, amount: round2(amount), day: d.day, category_id: d.category_id,
+    note: String(d.note || "").trim().slice(0, 80), created_at: new Date().toISOString() });
+  write("app_settings", { key: "pending_match", value: JSON.stringify(items) });
+}
+function pendingDelete(id) { guard(); write("app_settings", { key: "pending_match", value: JSON.stringify(pendingList().filter(x => x.id !== id)) }); }
 function catTree(kind) {
   const list = cats().filter(c => c.kind === kind && !c.deleted_at);
   const tops = list.filter(c => !c.parent_id || !list.some(p => p.id === c.parent_id));

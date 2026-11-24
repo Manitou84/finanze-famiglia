@@ -1026,6 +1026,28 @@ function viewMovimenti() {
 }
 
 /* ---------- inserimento / modifica ---------- */
+/* appunto PayPal / Satispay / Amazon: non è un movimento; il Mac lo abbina all'estratto conto della banca */
+function openPending(p) {
+  const x = p || { service: "paypal", day: todayIso(), amount: "", category_id: "", note: "" };
+  const opts = catTree("spesa").map(n => `<option value="${n.c.id}" ${x.category_id === n.c.id ? "selected" : ""}>${esc(n.c.name)}</option>` +
+    n.kids.map(k => `<option value="${k.id}" ${x.category_id === k.id ? "selected" : ""}>&nbsp;&nbsp;${esc(n.c.name)} › ${esc(k.name)}</option>`).join("")).join("");
+  const list = pendingList().filter(y => !p || y.id !== p.id).sort((a, b) => b.day.localeCompare(a.day));
+  const { sheet } = openSheet(p ? "Spesa da abbinare" : "Da abbinare", `
+    <div class="seg" id="pd-sv">${Object.entries(PENDING_SERVICES).map(([k, l]) => `<button type="button" data-s="${k}" class="${x.service === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <input class="amount num" id="pd-a" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Importo" value="${x.amount ? Number(x.amount).toFixed(2).replace(".", ",") : ""}">
+    <div class="amount-line">quanto hai pagato</div>
+    <label class="f"><span>Categoria</span><select id="pd-c"><option value="">Scegli…</option>${opts}</select></label>
+    <label class="f"><span>Cosa hai comprato <em class="opt">facoltativo</em></span><input type="text" id="pd-n" maxlength="80" placeholder="es. regalo compleanno, ricambi bici" value="${esc(x.note || "")}"></label>
+    <label class="f"><span>Data del pagamento</span><input type="date" id="pd-d" min="2026-11-23" value="${x.day}"></label>
+    <p class="hint">È un appunto, non una spesa: non tocca i conti. Quando sul Mac importi l'estratto conto, il movimento ${"«PayPal», «Satispay» o «Amazon»"} con lo stesso importo (entro 5 giorni) prende da solo questa categoria e descrizione.</p>
+    ${list.length ? `<h3 class="pd-h">In attesa dell'estratto conto</h3>${list.map(y => `<div class="row pd-it" data-pd="${y.id}"><span class="n"><b class="pd-sv ${y.service}">${PENDING_SERVICES[y.service]}</b> ${esc(y.note || catLabel(y.category_id))}<br><span class="muted" style="font-size:12px">${dayLabel(y.day)} · ${esc(y.note ? catLabel(y.category_id) : "")}</span></span><span class="num">${Number(y.amount).toFixed(2).replace(".", ",")} €</span></div>`).join("")}` : ""}`,
+    () => { pendingSave({ id: p && p.id, service: sv, amount: $("#pd-a").value, day: $("#pd-d").value, category_id: $("#pd-c").value, note: $("#pd-n").value }); return "Appunto salvato: lo abbino all'import"; },
+    p ? { del: { label: "Elimina", confirm: "Eliminare questo appunto?", run: () => { pendingDelete(p.id); return "Eliminato"; } } } : {});
+  let sv = x.service;
+  $$("#pd-sv button", sheet).forEach(b => b.onclick = () => { sv = b.dataset.s; $$("#pd-sv button", sheet).forEach(c => c.classList.toggle("on", c === b)); });
+  $$(".pd-it", sheet).forEach(r => r.onclick = () => { const y = pendingList().find(z => z.id === r.dataset.pd); if (y) { sheet.remove(); document.body.style.overflow = ""; openPending(y); } });
+  if (!p) setTimeout(() => $("#pd-a", sheet).focus(), 250);
+}
 function openTx(t, preset) {
   if (!canEdit()) { if (!t) toast("Il tuo utente può solo consultare i dati"); if (!t) return; }
   const edit = !!t;
@@ -1041,7 +1063,8 @@ function openTx(t, preset) {
   sheet.innerHTML = `
     <div class="sheet-head"><button class="btn link" id="xc">Annulla</button><h2>${edit ? "Movimento" : "Nuova spesa"}</h2><span style="width:60px"></span></div>
     ${!edit ? `<button class="scan" id="scan"><svg viewBox="0 0 24 24">${ICON.cam}</svg>Scansiona lo scontrino</button>
-      <input type="file" accept="image/*" capture="environment" id="scanf" hidden>` : ""}
+      <input type="file" accept="image/*" capture="environment" id="scanf" hidden>
+      <button class="pd-link" id="xpend">Pagato con <b>PayPal, Satispay o Amazon</b>? Segnalo da abbinare ›</button>` : ""}
     <div class="seg" id="xk" style="margin-bottom:6px"><button data-k="spesa">Spesa</button><button data-k="entrata">Entrata</button><button data-k="trasferimento">Trasferimento</button></div>
     <input class="amount num" id="xa" inputmode="decimal" placeholder="0,00" value="${esc(amountText(x.amount))}" autocomplete="off" aria-label="Importo in euro">
     <div class="amount-line">euro</div>
@@ -1066,6 +1089,7 @@ function openTx(t, preset) {
   document.body.appendChild(sheet);
   document.body.style.overflow = "hidden";
   const close = () => { sheet.remove(); document.body.style.overflow = ""; };
+  if ($("#xpend", sheet)) $("#xpend", sheet).onclick = () => { close(); openPending(); };
 
   const drawCats = () => {
     if (kind === "trasferimento") { $("#xcats").innerHTML = ""; return; }
