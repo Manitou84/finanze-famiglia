@@ -159,12 +159,12 @@ listeners.add(() => { if ($("#sub")) $("#sub").innerHTML = `${esc(DB.hhName || "
 /* ==========================================================================
    Riepilogo
    ========================================================================== */
-function donut(rows, total) {
+function donut(rows, total, size = 132) {
   const R = 52, C = 2 * Math.PI * R; let off = 0;
   const arcs = rows.map(r => { const len = total ? r.v / total * C : 0;
-    const a = `<circle r="${R}" cx="66" cy="66" fill="none" stroke="${r.color}" stroke-width="20" stroke-dasharray="${Math.max(0, len - 2)} ${C}" stroke-dashoffset="${-off}" transform="rotate(-90 66 66)"/>`;
+    const a = `<circle r="${R}" cx="66" cy="66" fill="none" stroke="${r.color}" stroke-width="20" stroke-dasharray="${Math.max(0, len - 2)} ${C}" stroke-dashoffset="${-off}" transform="rotate(-90 66 66)"${r.key ? ` data-ck="${r.key}" style="cursor:pointer"` : ""}/>`;
     off += len; return a; }).join("");
-  return `<svg viewBox="0 0 132 132" width="132" height="132" role="img" aria-label="Spese per categoria">
+  return `<svg viewBox="0 0 132 132" width="${size}" height="${size}" role="img" aria-label="Spese per categoria">
     <circle r="${R}" cx="66" cy="66" fill="none" stroke="var(--line)" stroke-width="20"/>${arcs}
     <text x="66" y="64" text-anchor="middle" style="font:700 15px var(--round);fill:var(--text)">${eur(total).replace(",00", "")}</text>
     <text x="66" y="82" text-anchor="middle" style="font-size:10px;fill:var(--muted)">spese</text></svg>`;
@@ -179,9 +179,11 @@ function viewHome() {
       ? ` e messo da parte <span class="sv">${eur(saved)}</span>.` : `, ${eur(-saved)} più delle entrate.`}`
     : `${intro}: ancora nessun movimento.`;
   const top = {}; d.tx.filter(t => t.kind === "spesa").forEach(t => { let c = catById(t.category_id); if (c && c.parent_id && catById(c.parent_id)) c = catById(c.parent_id);
-    const k = c ? c.id : "none"; top[k] = top[k] || { name: c ? c.name : "Senza categoria", color: c ? c.color : "#94A099", v: 0 }; top[k].v += t.amount; });
-  let rowsCat = Object.values(top).sort((a, b) => b.v - a.v);
-  if (rowsCat.length > 5) rowsCat = [...rowsCat.slice(0, 5), { name: "Altro", color: "#B8C2BB", v: rowsCat.slice(5).reduce((s, r) => s + r.v, 0) }];
+    const k = c ? c.id : "none"; top[k] = top[k] || { key: k, name: c ? c.name : "Senza categoria", color: c ? c.color : "#94A099", v: 0 }; top[k].v += t.amount; });
+  const allCat = Object.values(top).sort((a, b) => b.v - a.v);
+  let rowsCat = allCat;
+  if (rowsCat.length > 5) rowsCat = [...rowsCat.slice(0, 5), { key: "altro", name: `Altro (${allCat.length - 5} categorie)`, color: "#B8C2BB", v: rowsCat.slice(5).reduce((s, r) => s + r.v, 0) }];
+  S.catPie = { all: allCat, total: d.expense, month: S.month, tx: d.tx };
   const ser = series(S.month, 6); const max = Math.max(1, ...ser.flatMap(s => [s.income, s.expense]));
   const buds = cats().filter(c => d.budgets[c.id] != null && !c.deleted_at).map(c => ({ c, b: d.budgets[c.id], s: d.spentAll[c.id] || 0 }))
     .sort((x, y) => y.s / y.b - x.s / x.b);
@@ -231,8 +233,9 @@ function viewHome() {
     ${homeGoalsCard()}
 
     <div class="card"><h2>Dove sono andati i soldi</h2>
-      ${rowsCat.length ? `<div class="donut-wrap">${donut(rowsCat, d.expense)}<div class="lst">${rowsCat.map(r => `<div class="row" style="padding:6px 0">
-        <span class="dot" style="background:${r.color}"></span><span class="n">${esc(r.name)}</span><b class="num">${eur(r.v).replace(",00", "")}</b></div>`).join("")}</div></div>`
+      ${rowsCat.length ? `<div class="donut-wrap">${donut(rowsCat, d.expense)}<div class="lst">${rowsCat.map(r => `<button class="row ck-row" data-ck="${r.key}" style="padding:6px 0">
+        <span class="dot" style="background:${r.color}"></span><span class="n">${esc(r.name)}</span><b class="num">${eur(r.v).replace(",00", "")}</b></button>`).join("")}</div></div>
+        <p class="hint" style="margin:6px 0 0">Tocca una categoria per vedere i suoi movimenti</p>`
         : `<p class="muted">Nessuna spesa ${isNow ? "per ora" : "in questo mese"}.</p>`}
     </div>
 
@@ -262,6 +265,7 @@ function viewHome() {
   if ($("#fc-open")) $("#fc-open").onclick = openForecast;
   bindHomeKm(); bindHomeMeds();
   if ($("#q-add")) $("#q-add").onclick = () => openTx();
+  $$(".donut-wrap [data-ck]").forEach(b => b.onclick = () => openCatPie(b.dataset.ck));
   if ($("#q-meds")) $("#q-meds").onclick = () => medsGate(() => openMedsHub());
   if ($("#q-meds")) $("#q-meds").onclick = () => medsGate(() => openMedsHub());
   if ($("#q-bill")) $("#q-bill").onclick = () => billingGet() ? openBilling() : openBillingEdit();
@@ -1047,6 +1051,37 @@ function openPending(p) {
   $$("#pd-sv button", sheet).forEach(b => b.onclick = () => { sv = b.dataset.s; $$("#pd-sv button", sheet).forEach(c => c.classList.toggle("on", c === b)); });
   $$(".pd-it", sheet).forEach(r => r.onclick = () => { const y = pendingList().find(z => z.id === r.dataset.pd); if (y) { sheet.remove(); document.body.style.overflow = ""; openPending(y); } });
   if (!p) setTimeout(() => $("#pd-a", sheet).focus(), 250);
+}
+/* torta del Riepilogo: tocchi una categoria → i suoi movimenti del mese; tocchi «Altro» → tutte le categorie, grande */
+function openCatPie(key) {
+  const P = S.catPie; if (!P) return;
+  if (key === "altro") return openCatAll();
+  const r = P.all.find(x => x.key === key); if (!r) return;
+  const inCat = t => { if (t.kind !== "spesa") return false; let c = catById(t.category_id); if (c && c.parent_id && catById(c.parent_id)) c = catById(c.parent_id); return (c ? c.id : "none") === key; };
+  const xs = P.tx.filter(inCat).sort((a, b) => b.occurred_on.localeCompare(a.occurred_on) || b.amount - a.amount);
+  const subs = {}; xs.forEach(t => { const c = catById(t.category_id); const n = c && c.parent_id ? c.name : null; if (n) subs[n] = (subs[n] || 0) + t.amount; });
+  const back = S.catAllOpen ? openCatAll : null;
+  const { sheet } = openSheet(r.name, `
+    <div class="cp-head"><span class="dot" style="background:${r.color}"></span><b class="num">${eur(r.v)}</b><span class="muted">${xs.length} ${xs.length === 1 ? "movimento" : "movimenti"} · ${Math.round(r.v / (P.total || 1) * 100)}% delle spese di ${MESI[+P.month.slice(5) - 1]}</span></div>
+    ${Object.keys(subs).length ? `<div class="cp-subs">${Object.entries(subs).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<span>${esc(n)} <b>${eur(v).replace(",00", "")}</b></span>`).join("")}</div>` : ""}
+    <div class="card" style="padding:4px 14px">${xs.map(t => `<button class="row cp-tx" data-id="${t.id}"><span class="n">${esc(t.description || catLabel(t.category_id) || "Spesa")}<br><span class="muted" style="font-size:12px">${dayLabel(t.occurred_on)}${catById(t.category_id) && catById(t.category_id).parent_id ? " · " + esc(catById(t.category_id).name) : ""}</span></span><b class="num out">${eur(t.amount)}</b></button>`).join("")}</div>`,
+    null, {});
+  if (back) { const x = $("#sx", sheet); if (x) { x.textContent = "‹ Tutte"; x.onclick = () => { sheet.remove(); document.body.style.overflow = ""; openCatAll(); }; } }
+  $$(".cp-tx", sheet).forEach(b => b.onclick = () => { const t = P.tx.find(z => z.id === b.dataset.id); if (t) { sheet.remove(); document.body.style.overflow = ""; S.catAllOpen = false; openTx(t); } });
+}
+function openCatAll() {
+  const P = S.catPie; if (!P) return;
+  S.catAllOpen = true;
+  const el = document.createElement("div"); el.className = "cp-all"; el.id = "sheet";
+  el.innerHTML = `<div class="cp-top"><button class="btn link" id="cp-x">Chiudi</button><h2>Tutte le categorie</h2><span class="muted">${MESI[+P.month.slice(5) - 1]} ${P.month.slice(0, 4)}</span></div>
+    <div class="cp-body"><div class="cp-donut">${donut(P.all, P.total, 230)}</div>
+      <div class="cp-list">${P.all.map(r => `<button class="row ck-row" data-ck="${r.key}"><span class="dot" style="background:${r.color}"></span><span class="n">${esc(r.name)}</span>
+        <span class="cp-pct">${Math.round(r.v / (P.total || 1) * 100)}%</span><b class="num">${eur(r.v).replace(",00", "")}</b><i class="chev">›</i></button>`).join("")}</div></div>
+    <p class="hint cp-rot">Gira il telefono in orizzontale per vederla più grande</p>`;
+  document.body.appendChild(el); document.body.style.overflow = "hidden";
+  const close = () => { el.remove(); document.body.style.overflow = ""; S.catAllOpen = false; };
+  $("#cp-x", el).onclick = close;
+  $$("[data-ck]", el).forEach(b => b.onclick = () => { el.remove(); openCatPie(b.dataset.ck); });
 }
 function openTx(t, preset) {
   if (!canEdit()) { if (!t) toast("Il tuo utente può solo consultare i dati"); if (!t) return; }
